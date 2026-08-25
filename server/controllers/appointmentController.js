@@ -20,6 +20,25 @@ function getTimeSlotFromDate(date) {
   return d.getHours() * 4 + Math.floor(d.getMinutes() / 15);
 }
 
+function getMinutesFromTime(time) {
+  const match = String(time || "").match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return hours <= 23 && minutes <= 59 ? hours * 60 + minutes : null;
+}
+
+function isWithinServiceHours(start, durationMinutes, openingTime, closingTime) {
+  const openingMinutes = getMinutesFromTime(openingTime);
+  const closingMinutes = getMinutesFromTime(closingTime);
+  if (openingMinutes === null || closingMinutes === null) return false;
+
+  const startMinutes = start.getHours() * 60 + start.getMinutes();
+  const endMinutes = startMinutes + durationMinutes;
+  return startMinutes >= openingMinutes && endMinutes <= closingMinutes;
+}
+
 // Global priority queues for each restaurateur
 const restaurateursQueues = new Map();
 
@@ -323,6 +342,40 @@ export const createAppointment = async (req, res) => {
       }
       console.log("   ✅ Restaurateur found:", restaurateur.first_name);
 
+      if (restaurateur.active_status === false) {
+        return res.status(409).json({
+          success: false,
+          message: "This restaurant is currently unavailable for bookings.",
+        });
+      }
+
+      const durationMinutes = Number(service.duration) || 45;
+      if (Number(service.restaurateurId) !== Number(restaurateurId)) {
+        return res.status(403).json({
+          success: false,
+          message: "This service is not provided by the selected restaurant.",
+        });
+      }
+
+      if (
+        !isWithinServiceHours(
+          appointmentDate,
+          durationMinutes,
+          restaurateur.opening_time,
+          restaurateur.closing_time,
+        )
+      ) {
+        return res.status(409).json({
+          success: false,
+          message: "The selected service must be completed during restaurant service hours.",
+          serviceHours: {
+            opening: restaurateur.opening_time,
+            closing: restaurateur.closing_time,
+          },
+          durationMinutes,
+        });
+      }
+
       if (tableId) {
         const table = await getTableById(tableId);
         if (!table || table.restaurateur_id !== Number(restaurateurId)) {
@@ -442,7 +495,9 @@ export const createAppointment = async (req, res) => {
     try {
       console.log("   📝 Creating appointment...");
       const durationMinutes = Number(service.duration) || 45;
-      const endTime = new Date(appointmentDate.getTime() + durationMinutes * 60 * 1000);
+      const bufferMinutes = Number(process.env.BOOKING_BUFFER_MINUTES) || 15;
+      const effectiveDuration = durationMinutes + bufferMinutes;
+      const endTime = new Date(appointmentDate.getTime() + effectiveDuration * 60 * 1000);
 
       const appointment = await AppointmentModel.create({
         serviceId: selectedServiceId,
@@ -451,6 +506,7 @@ export const createAppointment = async (req, res) => {
         table_id: tableId,
         date: appointmentDate,
         end_time: endTime,
+        original_duration: durationMinutes,
         party_size: partySize,
         booked_price: Number(service.price || 0),
         status: autoAccept ? "accepted" : "pending",

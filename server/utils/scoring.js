@@ -106,13 +106,14 @@ export class ScoringEngine {
     const completed = map.completed || 0;
     const noShows = map.no_show || 0;
     const lateCancellations = map.late_cancelled || 0;
-    const totalBookings = completed + noShows + lateCancellations;
+    const overstays = map.overstayed || 0;
+    const totalBookings = completed + noShows + lateCancellations + overstays;
 
     if (totalBookings === 0) {
       return 0;
     }
 
-    const rawPenalty = (noShows * 0.7 + lateCancellations * 0.3) / totalBookings;
+    const rawPenalty = (noShows * 0.7 + lateCancellations * 0.3 + overstays * 0.15) / totalBookings;
     const decay = completed * 0.05;
 
     let penalty = rawPenalty - decay;

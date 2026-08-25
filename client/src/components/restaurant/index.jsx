@@ -1080,15 +1080,16 @@ import {
   FaCut,
   FaCog,
   FaSignOutAlt,
+  FaChair,
 } from "react-icons/fa";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./restaurant.css";
 import api from "../../apis/api";
-import RestaurantCapacitySettings from "../client/restaurant-settings";
 import DashboardTab from "./tabs/DashboardTab";
 import AppointmentsTab from "./tabs/AppointmentsTab";
 import ServicesTab from "./tabs/ServicesTab";
 import SettingsTab from "./tabs/SettingsTab";
+import TablesTab from "./tabs/TablesTab";
 import { useNavigate, useParams, NavLink } from "react-router-dom";
 import { jwtDecode } from "jwt-decode";
 
@@ -1406,9 +1407,11 @@ export default function RestaurantDashboard() {
       profileForm={profileForm}
       onChange={handleProfileChange}
       onSubmit={handleUpdateProfile}
-      restaurateurInfo={restaurateurInfo}
-      onCapacityUpdate={(msg) => triggerAlert(msg, "success")}
     />
+  );
+
+  const renderTables = () => (
+    <TablesTab restaurateurId={restaurateurInfo?.id} />
   );
 
   return (
@@ -1426,13 +1429,14 @@ export default function RestaurantDashboard() {
         <div>
           <div className="sidebar-brand-block">
             <FaCut className="brand-logo-icon" />
-            <h5 className="brand-title-text">restauranthood</h5>
+            <h5 className="brand-title-text">RestroVibe</h5>
           </div>
           <Nav className="flex-column gap-2">
             {[
               { id: "dashboard", label: "Dashboard Hub", icon: FaTachometerAlt },
               { id: "appointments", label: "Bookings Registry", icon: FaCalendarAlt, badge: appointments.filter(a => a.status === "pending").length },
               { id: "services", label: "Service Tiers", icon: FaCut },
+              { id: "tables", label: "Tables & Views", icon: FaChair },
               { id: "settings", label: "Workspace Config", icon: FaCog },
             ].map((tab) => (
               <Nav.Link
@@ -1468,6 +1472,7 @@ export default function RestaurantDashboard() {
           {activeTab === "dashboard" && renderDashboard()}
           {activeTab === "appointments" && renderAppointments()}
           {activeTab === "services" && renderServices()}
+          {activeTab === "tables" && renderTables()}
           {activeTab === "settings" && renderSettings()}
         </Container>
       </div>

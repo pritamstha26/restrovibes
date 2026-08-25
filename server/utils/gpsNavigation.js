@@ -1,5 +1,5 @@
 /**
- * GPS Navigation Utilities for restaurantHood
+ * GPS Navigation Utilities for RestroVibe
  * Generates navigation URLs, calculates ETA, bearing, and compass direction.
  */
 

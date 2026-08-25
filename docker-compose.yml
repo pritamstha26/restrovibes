@@ -3,17 +3,17 @@ version: '3.8'
 services:
   postgres:
     image: postgres:14-alpine
-    container_name: barberhood-db
+    container_name: restrovibe-db
     environment:
-      POSTGRES_USER: barberhood
-      POSTGRES_PASSWORD: barberhood_password
-      POSTGRES_DB: barberhood
+      POSTGRES_USER: restrovibe
+      POSTGRES_PASSWORD: restrovibe_password
+      POSTGRES_DB: restrovibe
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U barberhood"]
+      test: ["CMD-SHELL", "pg_isready -U restrovibe"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,11 +22,13 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
-    container_name: barberhood-server
+    container_name: restrovibe-server
+    env_file:
+      - ./server/.env
     environment:
       NODE_ENV: production
       PORT: 5000
-      DATABASE_URL: postgresql://barberhood:barberhood_password@postgres:5432/barberhood
+      DATABASE_URL: postgresql://restrovibe:restrovibe_password@postgres:5432/restrovibe
       FRONTEND_URL: http://localhost:5173
       JWT_SECRET: your-super-secret-jwt-key-change-in-production
     ports:
@@ -40,7 +42,7 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
-    container_name: barberhood-client
+    container_name: restrovibe-client
     environment:
       VITE_API_URL: http://localhost:5000/api
       VITE_MAP_TILE_URL: https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png

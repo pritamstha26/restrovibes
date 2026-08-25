@@ -107,7 +107,7 @@ export default function SignupPage() {
       <section className="auth-hero">
         <div className="auth-hero__content">
           <Logo />
-          <div className="auth-kicker">Join RestroVibe</div>
+          <div className="auth-kicker">RestroVibe</div>
           <h1>Open a modern booking workspace in minutes.</h1>
           <p>
             Create a client or restaurateur account and start using location-aware

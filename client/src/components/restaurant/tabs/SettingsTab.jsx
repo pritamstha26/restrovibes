@@ -1,9 +1,7 @@
 import React from "react";
-import { Card, Button } from "react-bootstrap";
-import { Plus } from "lucide-react";
-import RestaurantCapacitySettings from "../../client/restaurant-settings";
+import { Card } from "react-bootstrap";
 
-export default function SettingsTab({ profileForm, onChange, onSubmit, restaurateurInfo, onCapacityUpdate }) {
+export default function SettingsTab({ profileForm, onChange, onSubmit }) {
   return (
     <div className="d-grid gap-4">
       <Card className="matte-card">
@@ -67,13 +65,6 @@ export default function SettingsTab({ profileForm, onChange, onSubmit, restaurat
           </form>
         </Card.Body>
       </Card>
-
-      {restaurateurInfo?.id && (
-        <RestaurantCapacitySettings
-          restaurateurId={restaurateurInfo.id}
-          onCapacityUpdate={() => onCapacityUpdate("Capacity updated successfully")}
-        />
-      )}
     </div>
   );
 }

@@ -65,7 +65,7 @@ export default function LoginPage() {
       <section className="auth-hero">
         <div className="auth-hero__content">
           <Logo />
-          <div className="auth-kicker">restaurantHood v2</div>
+          <div className="auth-kicker">RestroVibe</div>
           <h1>Sharper bookings, cleaner operations.</h1>
           <p>
             A single workspace for clients, restaurateurs, and admins to book,

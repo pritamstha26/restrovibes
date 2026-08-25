@@ -31,6 +31,11 @@ const TableModel = sequelize.define("TableModel", {
     type: DataTypes.BOOLEAN,
     defaultValue: true,
   },
+  images: {
+    type: DataTypes.JSON,
+    defaultValue: [],
+    allowNull: true,
+  },
 }, {
   tableName: "tables",
   timestamps: true,

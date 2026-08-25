@@ -8,7 +8,7 @@ export async function reverseGeocode(lat, lng) {
 
     const response = await fetch(url.toString(), {
       headers: {
-        "User-Agent": "restaurantHood-client/1.0",
+        "User-Agent": "restrovibe-client/1.0",
       },
     });
 

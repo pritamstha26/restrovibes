@@ -2,6 +2,7 @@ import { Op } from "sequelize";
 import { LotteryPoolModel, BookingHistoryModel, UsersModel } from "../models/model.js";
 import AppointmentModel from "../models/appointmentModel.js";
 import { ScoringEngine } from "../utils/scoring.js";
+import { getWeightedEntries, selectWeightedEntry } from "../utils/weightedLottery.js";
 
 export const enterLottery = async (req, res) => {
   try {
@@ -196,20 +197,12 @@ export const resolveLottery = async (restaurantId, bookingDate, timeSlot) => {
       return null;
     }
 
-    const totalWeight = entries.reduce((sum, entry) => sum + entry.weight, 0);
-    let random = Math.random() * totalWeight;
-
-    let winner = entries[entries.length - 1];
-    for (const entry of entries) {
-      random -= entry.weight;
-      if (random <= 0) {
-        winner = entry;
-        break;
-      }
-    }
+    const weightedEntries = getWeightedEntries(entries);
+    const selected = selectWeightedEntry(entries);
+    const winner = selected.entry;
 
     const winnerId = winner.id;
-    const winnerWeight = winner.weight;
+    const winnerWeight = selected.effectiveWeight;
 
     await LotteryPoolModel.update(
       { status: "won" },
@@ -229,7 +222,11 @@ export const resolveLottery = async (restaurantId, bookingDate, timeSlot) => {
 
     const totalEntries = entries.length;
     const competitorCount = totalEntries - 1;
-    const winnerChance = calculateEstimatedChance(winnerWeight, competitorCount);
+    const totalWeight = weightedEntries.reduce(
+      (sum, item) => sum + item.effectiveWeight,
+      0,
+    );
+    const winnerChance = calculateWeightedChance(winnerWeight, totalWeight);
 
     const dayStart = new Date(bookingDate + "T00:00:00");
     const dayEnd = new Date(bookingDate + "T23:59:59.999");
@@ -282,7 +279,11 @@ export const resolveLottery = async (restaurantId, bookingDate, timeSlot) => {
       competitorCount,
       losers: entries
         .filter((e) => e.id !== winnerId)
-        .map((e) => ({ userId: e.user_id, weight: e.weight, entryId: e.id })),
+        .map((e) => ({
+          userId: e.user_id,
+          weight: weightedEntries.find((item) => item.entry.id === e.id).effectiveWeight,
+          entryId: e.id,
+        })),
     };
   } catch (error) {
     console.error("Error in resolveLottery:", error);
@@ -370,5 +371,10 @@ function calculateEstimatedChance(weight, competitorCount) {
   const percentage = totalEstimatedWeight > 0
     ? (weight / totalEstimatedWeight) * 100
     : 0;
+  return `${percentage.toFixed(1)}%`;
+}
+
+function calculateWeightedChance(weight, totalWeight) {
+  const percentage = totalWeight > 0 ? (weight / totalWeight) * 100 : 0;
   return `${percentage.toFixed(1)}%`;
 }

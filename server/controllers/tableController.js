@@ -91,6 +91,18 @@ export const createTable = async (req, res) => {
       });
     }
 
+    if (
+      !["admin", "restaurateurs"].includes(decodedToken.role) ||
+      (decodedToken.role !== "admin" &&
+        Number(decodedToken.id) !== Number(resolvedRestaurantId))
+    ) {
+      return res.status(403).json({ message: "You can only manage your own tables" });
+    }
+
+    if (!Number.isInteger(Number(capacity)) || Number(capacity) < 1) {
+      return res.status(400).json({ message: "capacity must be a positive integer" });
+    }
+
     const restaurateur = await UsersModel.findByPk(resolvedRestaurantId);
     if (!restaurateur || restaurateur.role !== "restaurateurs") {
       return res.status(404).json({
@@ -153,8 +165,20 @@ export const updateTable = async (req, res) => {
       });
     }
 
+    if (
+      decodedToken.role !== "admin" &&
+      Number(table.restaurateur_id) !== Number(decodedToken.id)
+    ) {
+      return res.status(403).json({ message: "You can only manage your own tables" });
+    }
+
     if (table_number !== undefined) table.table_number = table_number;
-    if (capacity !== undefined) table.capacity = Number(capacity);
+    if (capacity !== undefined) {
+      if (!Number.isInteger(Number(capacity)) || Number(capacity) < 1) {
+        return res.status(400).json({ message: "capacity must be a positive integer" });
+      }
+      table.capacity = Number(capacity);
+    }
     if (is_active !== undefined) table.is_active = is_active;
 
     await table.save();
@@ -189,6 +213,13 @@ export const deleteTable = async (req, res) => {
         success: false,
         message: "Table not found",
       });
+    }
+
+    if (
+      decodedToken.role !== "admin" &&
+      Number(table.restaurateur_id) !== Number(decodedToken.id)
+    ) {
+      return res.status(403).json({ message: "You can only manage your own tables" });
     }
 
     await table.destroy();

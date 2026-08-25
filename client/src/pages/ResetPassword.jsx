@@ -23,6 +23,13 @@ export default function ResetPasswordPage() {
     }
   }, [token]);
 
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => navigate("/login"), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [success, navigate]);
+
   const handleChange = (event) => {
     const { name, value } = event.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -102,7 +109,7 @@ export default function ResetPasswordPage() {
       <section className="auth-hero">
         <div className="auth-hero__content">
           <Logo />
-          <div className="auth-kicker">BarberHood v2</div>
+          <div className="auth-kicker">RestroVibe</div>
           <h1>Set new password</h1>
           <p>Your new password must be different from previously used passwords.</p>
         </div>

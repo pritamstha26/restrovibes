@@ -1,6 +1,12 @@
 import bcrypt from "bcrypt";
+import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
+import { Op } from "sequelize";
 import { UsersModel } from "../models/model.js";
+import { sendPasswordReset } from "../utils/email.js";
+
+const RESET_REQUEST_COOLDOWN_MS = 60 * 1000;
+const resetRequestTimes = new Map();
 
 export const register = async (req, res) => {
   try {
@@ -237,18 +243,30 @@ export const logout = async (req, res) => {
 
 export const forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
+    const email = String(req.body.email || "").trim().toLowerCase();
 
     if (!email) {
       return res.status(400).json({ message: "Email is required" });
     }
 
-    const user = await UsersModel.findOne({ where: { email } });
-
-    if (!user) {
+    const lastRequest = resetRequestTimes.get(email);
+    const isDevelopmentEmailMode =
+      (process.env.EMAIL_MODE || "dev").toLowerCase() === "dev";
+    if (
+      !isDevelopmentEmailMode &&
+      lastRequest &&
+      Date.now() - lastRequest < RESET_REQUEST_COOLDOWN_MS
+    ) {
       return res.status(200).json({
         message: "If the email exists, a password reset link has been sent",
       });
+    }
+    resetRequestTimes.set(email, Date.now());
+
+    const user = await UsersModel.findOne({ where: { email } });
+
+    if (!user) {
+      return res.status(200).json({ message: "If the email exists, a password reset link has been sent" });
     }
 
     const resetToken = crypto.randomBytes(32).toString("hex");
@@ -264,9 +282,15 @@ export const forgotPassword = async (req, res) => {
       console.error("Failed to send password reset email:", emailError);
     }
 
-    return res.status(200).json({
+    const response = {
       message: "If the email exists, a password reset link has been sent",
-    });
+    };
+
+    if (isDevelopmentEmailMode) {
+      response.resetUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password?token=${resetToken}`;
+    }
+
+    return res.status(200).json(response);
   } catch (error) {
     console.error("Error in forgotPassword:", error);
     return res.status(500).json({ message: "Internal server error" });
@@ -281,6 +305,12 @@ export const resetPassword = async (req, res) => {
       return res
         .status(400)
         .json({ message: "Token and new password are required" });
+    }
+
+    if (typeof password !== "string" || password.length < 8) {
+      return res.status(400).json({
+        message: "Password must be at least 8 characters",
+      });
     }
 
     const user = await UsersModel.findOne({

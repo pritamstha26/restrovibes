@@ -112,7 +112,7 @@ export default function AdminLayout() {
                 <ShieldCheck size={18} />
               </div>
               <div>
-                <h4 className="m-0 fs-5 fw-bold" style={{ letterSpacing: "-0.02em", color: "#f8fafc" }}>restauranthood</h4>
+                <h4 className="m-0 fs-5 fw-bold" style={{ letterSpacing: "-0.02em", color: "#f8fafc" }}>RestroVibe</h4>
                 <span style={{ fontSize: "0.68rem", fontWeight: "600", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>HQ Panel</span>
               </div>
             </div>

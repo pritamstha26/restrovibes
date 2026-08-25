@@ -140,7 +140,7 @@ const BookingHistoryModel = sequelize.define("BookingHistoryModel", {
     allowNull: false,
   },
   status: {
-    type: DataTypes.ENUM("completed", "late_cancelled", "no_show", "upcoming"),
+    type: DataTypes.ENUM("completed", "late_cancelled", "no_show", "upcoming", "overstayed"),
     defaultValue: "upcoming",
   },
   created_at: {

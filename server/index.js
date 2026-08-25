@@ -12,6 +12,7 @@ import locationRoutes from "./routes/locationRoutes.js";
 import ratingRoutes from "./routes/ratingRoutes.js";
 import lotteryRoutes from "./routes/lotteryRoutes.js";
 import tableRoutes from "./routes/tableRoutes.js";
+import uploadRoutes from "./routes/uploadRoutes.js";
 import ServiceModel from "./models/service.js";
 import sequelize from "./config/db.js";
 import { lotteryScheduler } from "./jobs/lotteryScheduler.js";
@@ -128,6 +129,12 @@ app.use(
 );
 app.use(express.json());
 
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 // Routes
 app.use("/api/users", userRoutes);
 app.use("/api/auth", authRoutes);
@@ -138,6 +145,7 @@ app.use("/api/location", locationRoutes);
 app.use("/api/ratings", ratingRoutes);
 app.use("/api/lottery", lotteryRoutes);
 app.use("/api/tables", tableRoutes);
+app.use("/api/uploads", uploadRoutes);
 // Error handling
 app.use((err, req, res, next) => {
   console.error(err.stack);

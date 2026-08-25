@@ -60,6 +60,11 @@ const AppointmentModel = sequelize.define("AppointmentModel", {
     type: DataTypes.DATE,
     allowNull: true,
   },
+  original_duration: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: "Original service duration in minutes (before buffer)",
+  },
   extended_until: {
     type: DataTypes.DATE,
     allowNull: true,
@@ -67,6 +72,11 @@ const AppointmentModel = sequelize.define("AppointmentModel", {
   extension_status: {
     type: DataTypes.ENUM("none", "pending", "accepted", "rejected"),
     defaultValue: "none",
+  },
+  overstay_fee: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    comment: "Fee in cents/paise for overstay beyond grace period",
   },
   status: {
     type: DataTypes.ENUM(

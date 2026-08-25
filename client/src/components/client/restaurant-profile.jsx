@@ -14,7 +14,7 @@ import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import api from "../../apis/api";
 import { useNavigate } from "react-router-dom";
-import "./dashboard.css"; 
+import "./dashboard.css";
 
 const formatTimeLabel = (value) => {
   if (!value) return "09:00 AM";
@@ -25,6 +25,13 @@ const formatTimeLabel = (value) => {
   const period = hour >= 12 ? "PM" : "AM";
   const displayHour = hour % 12 || 12;
   return `${String(displayHour).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${period}`;
+};
+
+const getTimeOnDate = (date, value, offsetMinutes = 0) => {
+  const [hours, minutes] = String(value || "09:00").slice(0, 5).split(":").map(Number);
+  const result = new Date(date);
+  result.setHours(hours, minutes - offsetMinutes, 0, 0);
+  return result;
 };
 
 const RestaurantProfile = ({ restaurantId }) => {
@@ -107,7 +114,12 @@ const RestaurantProfile = ({ restaurantId }) => {
     setShowBookingModal(true);
     setBookingError(null);
     setBookingSuccess(false);
-    setBookingDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    setBookingDate(
+      getTimeOnDate(
+        new Date(Date.now() + 24 * 60 * 60 * 1000),
+        openingTime,
+      ),
+    );
     setPartySize(1);
   };
 
@@ -140,9 +152,7 @@ const RestaurantProfile = ({ restaurantId }) => {
 
       console.log("[Booking] appointment response", response.status, response.data);
       if (response.status === 201) {
-        setBookingSuccess(true);
-        setShowBookingModal(false);
-        setSelectedService(null);
+        navigate("/client/dashboard", { replace: true });
       }
     } catch (err) {
       console.error("[Booking] appointment error", err);
@@ -172,100 +182,6 @@ const RestaurantProfile = ({ restaurantId }) => {
     <div className="s-vis-dashboard">
       <Container className="s-vis-main py-5">
         <Row className="g-5">
-          
-          {/* Identity Hub - Soft Blur & Gentle Shadows */}
-          <Col lg={4}>
-            <div className="s-vis-sidebar p-4">
-              <div className="text-center mb-4">
-                <div className="s-vis-avatar mx-auto mb-3">
-                  <FaUser className="s-vis-avatar-icon" />
-                </div>
-                <h1 className="s-vis-name text-capitalize">{restaurant.first_name} {restaurant.last_name}</h1>
-                
-                <div className="s-vis-rating d-inline-flex align-items-center gap-1 px-2.5 py-1 mt-1">
-                  <FaStar className="star-soft" />
-                  <span className="fw-semibold">{restaurant.average_rating || "0.0"}</span>
-                  <span className="text-muted">•</span>
-                  <span className="text-muted">{restaurant.total_ratings || 0} reviews</span>
-                </div>
-              </div>
-
-              {/* Seamless Contact Streams */}
-              <div className="s-vis-info-stack mt-4">
-                <div className="s-vis-info-row">
-                  <FaPhoneAlt className="s-vis-icon" />
-                  <a href={`tel:${restaurant.phone_number || "—"}`} className="s-vis-text">
-                    {restaurant.phone_number || "—"}
-                  </a>
-                </div>
-                <div className="s-vis-info-row">
-                  <FaEnvelope className="s-vis-icon" />
-                  <a href={`mailto:${restaurant.email || "—"}`} className="s-vis-text text-lowercase">
-                    {restaurant.email || "—"}
-                  </a>
-                </div>
-                <div className="s-vis-info-row">
-                  <FaMapMarkerAlt className="s-vis-icon" />
-                  <span className="s-vis-text">{restaurant.location || "—"}</span>
-                </div>
-                <div className="s-vis-info-row highlight-row">
-                  <FaClock className="s-vis-icon highlight-icon" />
-                  <span className="s-vis-text fw-medium text-secondary-dark">Available {formatTimeLabel(openingTime)} - {formatTimeLabel(closingTime)}</span>
-                </div>
-              </div>
-            </div>
-          </Col>
-
-          {/* Minimalist Catalog System */}
-          <Col lg={8}>
-            <div className="s-vis-header mb-4">
-              <h2 className="s-vis-title m-0">Menu & Services</h2>
-              <p className="text-muted small m-0 mt-1">Select an item below to book your appointment slot</p>
-            </div>
-
-            {services.length > 0 ? (
-              <div className="d-flex flex-column gap-3">
-                {services.map((service) => (
-                  <div key={service.id} className="s-vis-card p-4 d-flex align-items-center justify-content-between">
-                    <div className="d-flex align-items-center gap-3.5">
-                      <div className="s-vis-item-art">
-                        <FaCut />
-                      </div>
-                      <div>
-                        <h4 className="s-vis-item-title m-0">{service.name}</h4>
-                        <div className="d-flex align-items-center gap-2 mt-1.5">
-                          <span className="s-vis-tag">{service.duration} mins</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="d-flex align-items-center gap-4">
-                      <div className="text-end">
-                        <span className="s-vis-price-hint">Price</span>
-                        <div className="s-vis-price">Rs. {service.price}</div>
-                      </div>
-                      <button className="s-vis-btn" onClick={() => navigate(`/book/${restaurant.id}`)}>
-                        Book Table
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="s-vis-empty p-5 text-center text-muted">
-                No active items currently available in this catalog.
-              </div>
-            )}
-          </Col>
-        </Row>
-      </Container>
-    </div>
-  );
-
-  return (
-    <div className="s-vis-dashboard">
-      <Container className="s-vis-main py-5">
-        <Row className="g-5">
           <Col lg={4}>
             <div className="s-vis-sidebar p-4">
               <div className="text-center mb-4">
@@ -334,7 +250,7 @@ const RestaurantProfile = ({ restaurantId }) => {
                         <span className="s-vis-price-hint">Price</span>
                         <div className="s-vis-price">Rs. {service.price}</div>
                       </div>
-                      <button className="s-vis-btn" onClick={() => navigate(`/book/${restaurant.id}`)}>
+                      <button className="s-vis-btn" onClick={() => handleServiceSelect(service)}>
                         Book Table
                       </button>
                     </div>
@@ -370,6 +286,7 @@ const RestaurantProfile = ({ restaurantId }) => {
                   <p className="mb-1"><strong>Service:</strong> {selectedService.name}</p>
                   <p className="mb-1"><strong>Duration:</strong> {selectedService.duration} minutes</p>
                   <p className="mb-0"><strong>Price:</strong> Rs. {selectedService.price}</p>
+                  <p className="mb-0 text-muted"><strong>Available:</strong> {formatTimeLabel(openingTime)} - {formatTimeLabel(closingTime)}</p>
                 </div>
               )}
 
@@ -381,6 +298,8 @@ const RestaurantProfile = ({ restaurantId }) => {
                     onChange={(date) => setBookingDate(date)}
                     showTimeSelect
                     timeIntervals={15}
+                    minTime={getTimeOnDate(bookingDate, openingTime)}
+                    maxTime={getTimeOnDate(bookingDate, closingTime, Number(selectedService?.duration) || 45)}
                     dateFormat="MMMM d, yyyy h:mm aa"
                     minDate={new Date()}
                     className="form-control"

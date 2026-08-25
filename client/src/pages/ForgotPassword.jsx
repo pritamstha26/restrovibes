@@ -9,6 +9,7 @@ export default function ForgotPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [resetUrl, setResetUrl] = useState("");
   const [formData, setFormData] = useState({ email: "" });
 
   const handleChange = (event) => {
@@ -31,7 +32,8 @@ export default function ForgotPasswordPage() {
     setError(null);
 
     try {
-      await api.post("/auth/forgot-password", { email: formData.email });
+      const response = await api.post("/auth/forgot-password", { email: formData.email });
+      setResetUrl(response.data?.resetUrl || "");
       setSuccess(true);
     } catch (caughtError) {
       setError(caughtError.response?.data?.message || "An error occurred. Please try again.");
@@ -45,7 +47,7 @@ export default function ForgotPasswordPage() {
       <section className="auth-hero">
         <div className="auth-hero__content">
           <Logo />
-          <div className="auth-kicker">BarberHood v2</div>
+          <div className="auth-kicker">RestroVibe</div>
           <h1>Reset your password</h1>
           <p>Enter your email and we'll send you a link to reset your password.</p>
         </div>
@@ -63,6 +65,12 @@ export default function ForgotPasswordPage() {
             {success && (
               <Alert variant="success" className="mt-4">
                 If an account exists for that email, you'll receive password reset instructions shortly.
+                {resetUrl && (
+                  <div className="mt-3">
+                    <div className="small mb-1">Development reset link:</div>
+                    <a href={resetUrl} className="text-break">Open password reset</a>
+                  </div>
+                )}
               </Alert>
             )}
 

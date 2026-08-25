@@ -1,6 +1,18 @@
+import 'dotenv/config';
 import nodemailer from 'nodemailer';
 
 const DEV_EMAIL_MODE = (process.env.EMAIL_MODE || 'dev').toLowerCase() === 'dev';
+
+if (!DEV_EMAIL_MODE) {
+  const missingEmailSettings = ['EMAIL_HOST', 'EMAIL_USERNAME', 'EMAIL_PASSWORD']
+    .filter((name) => !process.env[name]);
+
+  if (missingEmailSettings.length) {
+    console.warn(
+      `SMTP email mode enabled but missing: ${missingEmailSettings.join(', ')}`,
+    );
+  }
+}
 
 const transporter = DEV_EMAIL_MODE
   ? {

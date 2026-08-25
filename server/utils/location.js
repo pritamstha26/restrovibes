@@ -1,5 +1,5 @@
 /**
- * Location utilities for restaurantHood
+ * Location utilities for RestroVibe
  * Includes the Haversine formula for calculating distances between coordinates
  */
 
