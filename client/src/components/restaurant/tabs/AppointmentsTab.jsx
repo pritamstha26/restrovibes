@@ -1,7 +1,9 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Card, Table, Button } from "react-bootstrap";
 import { RefreshCw } from "lucide-react";
 import ClientRiskPopover from "./ClientRiskPopover";
+import StarRating from "../../StarRating";
+import api from "../../../apis/api";
 
 const SortIcon = ({ field, sortField, sortDir }) => {
   if (sortField !== field) return <span style={{ opacity: 0.3, marginLeft: 4 }}>⇅</span>;
@@ -34,8 +36,51 @@ const RiskDot = ({ reliabilityStatus }) => {
 };
 
 export default function AppointmentsTab({ appointments, isLoading, onSync, sortField, sortDir, onSort, onUpdateStatus }) {
+  const [ratedIds, setRatedIds] = useState({});
+  const [ratingTarget, setRatingTarget] = useState(null);
+  const [ratingValue, setRatingValue] = useState(0);
+
+  useEffect(() => {
+    const completed = (appointments || []).filter((a) => a.status === "completed");
+    if (!completed.length) return;
+    const fetchRatings = async () => {
+      const token = sessionStorage.getItem("access_token");
+      if (!token) return;
+      const results = {};
+      for (const app of completed) {
+        try {
+          const res = await api.get(`/ratings/appointment/${app.id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const ratings = res.data?.data || [];
+          const mine = ratings.find((r) => r.targetType === "client");
+          if (mine) results[app.id] = mine.rating;
+        } catch {}
+      }
+      setRatedIds(results);
+    };
+    fetchRatings();
+  }, [appointments]);
+
+  const handleSubmitRating = async () => {
+    if (!ratingTarget || !ratingValue) return;
+    try {
+      const token = sessionStorage.getItem("access_token");
+      await api.post("/ratings", {
+        appointmentId: ratingTarget,
+        rating: ratingValue,
+        targetType: "client",
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      setRatedIds((prev) => ({ ...prev, [ratingTarget]: ratingValue }));
+      setRatingTarget(null);
+      setRatingValue(0);
+    } catch (err) {
+      alert(err.response?.data?.message || "Failed to submit rating");
+    }
+  };
+
   const activeAppointments = (appointments || [])
-    .filter((app) => ["pending", "accepted", "in_progress"].includes(app.status))
+    .filter((app) => ["pending", "accepted", "in_progress", "completed"].includes(app.status))
     .sort((a, b) => {
       let aVal = a[sortField];
       let bVal = b[sortField];
@@ -156,6 +201,23 @@ export default function AppointmentsTab({ appointments, isLoading, onSync, sortF
                           ✕ No Show
                         </Button>
                       </>
+                    )}
+                    {app.status === "completed" && (
+                      ratedIds[app.id] != null ? (
+                        <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+                          Rated <StarRating value={ratedIds[app.id]} readonly size={14} />
+                        </span>
+                      ) : ratingTarget === app.id ? (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <StarRating value={ratingValue} onChange={setRatingValue} size={16} />
+                          <Button variant="none" className="control-btn btn-confirm" style={{ fontSize: "0.7rem", padding: "2px 8px" }} onClick={handleSubmitRating}>✓</Button>
+                          <Button variant="none" className="control-btn btn-cancel" style={{ fontSize: "0.7rem", padding: "2px 8px" }} onClick={() => { setRatingTarget(null); setRatingValue(0); }}>✕</Button>
+                        </span>
+                      ) : (
+                        <Button variant="none" className="control-btn btn-confirm" onClick={() => { setRatingTarget(app.id); setRatingValue(0); }}>
+                          ★ Rate Client
+                        </Button>
+                      )
                     )}
                   </td>
                 </tr>

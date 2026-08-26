@@ -214,7 +214,7 @@ app.listen(PORT, () => {
 
 // Start background workers
 try {
-  // lotteryScheduler.start(); // Disabled — manual accept/reject flow only
+  lotteryScheduler.start();
   startOverstayWorker();
   startAutoAcceptWorker();
 } catch (err) {

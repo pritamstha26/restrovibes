@@ -294,9 +294,9 @@ distance = R × c    (R = 6,371 km — Earth's radius)
 
 Haversine provides straight-line distance, which is sufficient for "nearby" discovery. The system estimates travel time at 30 km/h average speed.
 
-### 6.4 Weighted Lottery System (Disabled)
+### 6.4 Weighted Lottery System
 
-Designed for resolving slot conflicts when multiple clients book the same time slot:
+Resolves slot conflicts when multiple clients book the same time slot at the same restaurant.
 
 #### Weight Calculation
 ```
@@ -314,7 +314,7 @@ Where:
 3. Select winner using weighted random selection (proportional to weight)
 4. Winner's appointment → `accepted`; Losers → `cancelled`
 
-**Current Status**: Disabled in favor of manual accept/reject with FCFS (First Come First Served) flow.
+**Coexistence with manual flow**: The lottery runs alongside manual accept/reject. Restaurateurs can manually accept/reject bookings before the lottery or auto-accept worker processes them.
 
 ### 6.5 Competing Bookings Detection
 

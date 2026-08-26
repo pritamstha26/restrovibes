@@ -29,6 +29,7 @@ import {
   FaRoute,
 } from "react-icons/fa";
 import api from "../apis/api";
+import StarRating from "../components/StarRating";
 import "../components/client/dashboard.css";
 
 const RecenterMap = ({ center }) => {
@@ -122,6 +123,9 @@ export default function AppointmentDetailPage() {
   const [error, setError] = useState(null);
   const [cancelInProgress, setCancelInProgress] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+  const [myRating, setMyRating] = useState(0);
+  const [existingRating, setExistingRating] = useState(null);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
   useEffect(() => {
     const fetchAppointment = async () => {
@@ -131,8 +135,22 @@ export default function AppointmentDetailPage() {
         const response = await api.get(`/appointments/${id}`);
         if (response.status === 200) {
           const data = response.data?.data || response.data;
-          setAppointment(Array.isArray(data) ? data[0] : data);
+          const appt = Array.isArray(data) ? data[0] : data;
+          setAppointment(appt);
           setTimeout(() => setMapReady(true), 300);
+
+          if (appt?.status === "completed") {
+            try {
+              const ratingRes = await api.get(`/ratings/appointment/${appt.id}`);
+              const ratings = ratingRes.data?.data || [];
+              const myExisting = ratings.find((r) => r.targetType === "restaurateur");
+              if (myExisting) {
+                setExistingRating(myExisting);
+                setMyRating(myExisting.rating);
+                setRatingSubmitted(true);
+              }
+            } catch {}
+          }
         } else {
           setError("Appointment not found");
         }
@@ -175,6 +193,23 @@ export default function AppointmentDetailPage() {
         `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,
         "_blank",
       );
+    }
+  };
+
+  const handleSubmitRating = async (starValue) => {
+    if (!appointment) return;
+    try {
+      const res = await api.post("/ratings", {
+        appointmentId: appointment.id,
+        rating: starValue,
+        targetType: "restaurateur",
+      });
+      if (res.status === 200) {
+        setMyRating(starValue);
+        setRatingSubmitted(true);
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || "Failed to submit rating");
     }
   };
 
@@ -559,6 +594,25 @@ export default function AppointmentDetailPage() {
                     <FaRoute /> Back to Dashboard
                   </button>
                 </div>
+
+                {appt.status === "completed" && (
+                  <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 12, marginTop: 12 }}>
+                    <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "#374151", marginBottom: 8 }}>
+                      {ratingSubmitted ? "Your Rating" : "Rate this experience"}
+                    </div>
+                    <StarRating
+                      value={myRating}
+                      onChange={handleSubmitRating}
+                      readonly={ratingSubmitted}
+                      size={24}
+                    />
+                    {ratingSubmitted && (
+                      <div style={{ fontSize: "0.7rem", color: "#6b7280", marginTop: 4 }}>
+                        Thank you for your feedback!
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -5,15 +5,13 @@ services:
     image: postgres:14-alpine
     container_name: restrovibe-db
     environment:
-      POSTGRES_USER: restrovibe
-      POSTGRES_PASSWORD: restrovibe_password
-      POSTGRES_DB: restrovibe
-    ports:
-      - "5433:5432"
+      POSTGRES_USER: ${DB_USER:-restrovibe}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-restrovibe_password}
+      POSTGRES_DB: ${DB_NAME:-restrovibe}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U restrovibe"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-restrovibe}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,9 +26,6 @@ services:
     environment:
       NODE_ENV: production
       PORT: 5000
-      DATABASE_URL: postgresql://restrovibe:restrovibe_password@postgres:5432/restrovibe
-      FRONTEND_URL: http://localhost:5173
-      JWT_SECRET: your-super-secret-jwt-key-change-in-production
     ports:
       - "5000:5000"
     depends_on:
