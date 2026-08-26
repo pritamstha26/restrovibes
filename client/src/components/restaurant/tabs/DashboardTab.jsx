@@ -1,10 +1,36 @@
 import React, { useMemo } from "react";
 import { Row, Col, Card, Table, Button } from "react-bootstrap";
 import { CalendarCheck, Clock, User, Scissors, Landmark, TrendingUp, RefreshCw } from "lucide-react";
+import ClientRiskPopover from "./ClientRiskPopover";
 
 const SortIcon = ({ field, sortField, sortDir }) => {
   if (sortField !== field) return <span style={{ opacity: 0.3, marginLeft: 4 }}>⇅</span>;
   return <span style={{ marginLeft: 4 }}>{sortDir === "asc" ? "↑" : "↓"}</span>;
+};
+
+const RELIABILITY_CONFIG = {
+  reliable: { color: "#22c55e", label: "Reliable customer" },
+  at_risk: { color: "#eab308", label: "At-risk customer — some booking issues" },
+  flagged: { color: "#ef4444", label: "Flagged — frequent no-shows or late arrivals" },
+};
+
+const RiskDot = ({ reliabilityStatus }) => {
+  const config = RELIABILITY_CONFIG[reliabilityStatus] || RELIABILITY_CONFIG.reliable;
+  return (
+    <span
+      title={config.label}
+      style={{
+        display: "inline-block",
+        width: 10,
+        height: 10,
+        borderRadius: "50%",
+        backgroundColor: config.color,
+        marginLeft: 6,
+        verticalAlign: "middle",
+        boxShadow: `0 0 4px ${config.color}55`,
+      }}
+    />
+  );
 };
 
 export default function DashboardTab({ appointments, isLoading, onSync, sortField, sortDir, onSort }) {
@@ -84,11 +110,37 @@ export default function DashboardTab({ appointments, isLoading, onSync, sortFiel
             <tbody>
               {sortedAppointments.slice(0, 6).map((app) => (
                 <tr key={app.id}>
-                  <td className="ps-4 fw-medium text-dark">{app.client_name}</td>
+                  <td className="ps-4 fw-medium text-dark">
+                    {app.client_name}
+                    <ClientRiskPopover clientId={app.client_id}>
+                      <RiskDot reliabilityStatus={app.client_reliability_status} />
+                    </ClientRiskPopover>
+                  </td>
                   <td>{app.service_name}</td>
                   <td className="text-muted">{new Date(app.date).toLocaleString()}</td>
                   <td className="fw-semibold text-dark">Rs. {app.price}</td>
-                  <td><span className={`status-flag status-flag-${app.status}`}>{app.status.replace(/_/g, " ")}</span></td>
+                  <td>
+                    <span className={`status-flag status-flag-${app.status}`}>{app.status.replace(/_/g, " ")}</span>
+                    {app.competing_count > 1 && (
+                      <span
+                        title={`${app.competing_count} clients competing for this slot`}
+                        style={{
+                          display: "inline-block",
+                          marginLeft: 6,
+                          padding: "1px 6px",
+                          fontSize: "0.65rem",
+                          fontWeight: 600,
+                          borderRadius: 8,
+                          background: "#fef3c7",
+                          color: "#92400e",
+                          border: "1px solid #fcd34d",
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        {app.competing_count} competing
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

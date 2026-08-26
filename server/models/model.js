@@ -107,6 +107,20 @@ const UsersModel = sequelize.define("UsersModel", {
     type: DataTypes.INTEGER,
     defaultValue: 0,
   },
+  total_late_arrivals: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+  },
+  is_flagged: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    comment: "True if penalty_score > 0.5 (bad customer)",
+  },
+  reliability_status: {
+    type: DataTypes.ENUM("reliable", "at_risk", "flagged"),
+    defaultValue: "reliable",
+    comment: "reliable=good standing, at_risk=penalty_score>0.25, flagged=penalty_score>0.5",
+  },
 });
 
 const BookingHistoryModel = sequelize.define("BookingHistoryModel", {
@@ -140,7 +154,7 @@ const BookingHistoryModel = sequelize.define("BookingHistoryModel", {
     allowNull: false,
   },
   status: {
-    type: DataTypes.ENUM("completed", "late_cancelled", "no_show", "upcoming", "overstayed"),
+    type: DataTypes.ENUM("completed", "late_cancelled", "no_show", "upcoming", "overstayed", "late_arrival"),
     defaultValue: "upcoming",
   },
   created_at: {

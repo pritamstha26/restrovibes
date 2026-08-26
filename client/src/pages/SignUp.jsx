@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { Alert, Button, Card, Form, Spinner } from "react-bootstrap";
+import { Alert, Button, Card, Form } from "react-bootstrap";
 import api from "../apis/api";
 import { useNavigate, Link } from "react-router-dom";
 import Logo from "../components/Logo";
-import { reverseGeocode } from "../utils/geocode";
 
 const ROLES = [
   { key: "restaurateurs", label: "Restaurateurs" },
@@ -14,7 +13,6 @@ export default function SignupPage() {
   const [validated, setValidated] = useState(false);
   const [selectedRole, setSelectedRole] = useState("client");
   const [error, setError] = useState(null);
-  const [isFetchingLocation, setIsFetchingLocation] = useState(false);
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -27,25 +25,6 @@ export default function SignupPage() {
   const handleChange = (event) => {
     const { name, value } = event.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const getRestaurateurLocation = async () => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      return { latitude: null, longitude: null, location_name: null };
-    }
-
-    return new Promise((resolve) => {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords;
-          const location_name =
-            (await reverseGeocode(latitude, longitude)) || "Current location";
-          resolve({ latitude, longitude, location_name });
-        },
-        () => resolve({ latitude: null, longitude: null, location_name: null }),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
-      );
-    });
   };
 
   const handleSubmit = async (event) => {
@@ -74,17 +53,11 @@ export default function SignupPage() {
     setValidated(true);
     setError(null);
 
-    let payload = {
+    const payload = {
       ...formData,
       role: selectedRole,
       phone_number: formData.phone_number || null,
     };
-
-    if (selectedRole === "restaurateurs") {
-      setIsFetchingLocation(true);
-      const locationData = await getRestaurateurLocation();
-      payload = { ...payload, ...locationData };
-    }
 
     try {
       const response = await api.post("/auth/register", payload);
@@ -97,8 +70,6 @@ export default function SignupPage() {
       setError(
         caughtError.response?.data?.message || "An error occurred. Please try again.",
       );
-    } finally {
-      setIsFetchingLocation(false);
     }
   };
 
@@ -214,12 +185,12 @@ export default function SignupPage() {
 
               <div className="mb-3 small text-muted">
                 {selectedRole === "restaurateurs"
-                  ? "We’ll store your restaurant coordinates using your current location."
+                  ? "You'll set your business location on first login."
                   : "Client accounts can book appointments immediately after signup."}
               </div>
 
-              <Button className="auth-submit w-100 mb-3" type="submit" disabled={isFetchingLocation}>
-                {isFetchingLocation ? <Spinner size="sm" /> : "Sign up"}
+              <Button className="auth-submit w-100 mb-3" type="submit">
+                Sign up
               </Button>
 
               <div className="text-center auth-footnote">

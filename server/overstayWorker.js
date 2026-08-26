@@ -2,6 +2,7 @@ import AppointmentModel from "./models/appointmentModel.js";
 import { Op } from "sequelize";
 import sequelize from "./config/db.js";
 import { BookingHistoryModel } from "./models/model.js";
+import { ScoringEngine } from "./utils/scoring.js";
 
 const GRACE_MINUTES = Number(process.env.OVERSTAY_GRACE_MINUTES) || 10;
 const CHECK_INTERVAL_MS = 60 * 1000; // every minute
@@ -52,12 +53,14 @@ export function startOverstayWorker() {
             if (apt.status === "in_progress") {
               apt.status = "completed";
               await apt.save();
-              await createHistoryEntry(apt, "completed");
+              await createHistoryEntry(apt, "overstayed");
+              await ScoringEngine.recalculateUserPenalty(apt.clientId);
               console.log("Auto-completed appointment", apt.id, "due to overstay/expiry");
             } else {
               apt.status = "no_show";
               await apt.save();
               await createHistoryEntry(apt, "no_show");
+              await ScoringEngine.recalculateUserPenalty(apt.clientId);
               console.log("Marked appointment", apt.id, "as no_show due to expiry");
             }
           } catch (err) {

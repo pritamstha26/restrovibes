@@ -73,6 +73,9 @@ export const getUserById = async (req, res) => {
         "role",
         "opening_time",
         "closing_time",
+        "latitude",
+        "longitude",
+        "location_name",
       ],
     });
     if (!user) {
@@ -182,6 +185,18 @@ export const updateUser = async (req, res) => {
     }
 
     const updateData = { ...req.body };
+
+    // Validate phone number if being updated
+    if (updateData.phone_number != null && updateData.phone_number !== "") {
+      const phoneStr = String(updateData.phone_number).replace(/\D/g, "");
+      if (!/^(98|97)\d{8}$/.test(phoneStr)) {
+        return res.status(400).json({
+          success: false,
+          message: "Phone number must be 10 digits starting with 98 or 97",
+        });
+      }
+      updateData.phone_number = parseInt(phoneStr);
+    }
 
     if (updateData.opening_time === "") {
       updateData.opening_time = null;

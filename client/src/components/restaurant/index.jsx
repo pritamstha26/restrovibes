@@ -1065,7 +1065,7 @@
 //   );
 // }
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Container,
   Navbar,
@@ -1090,6 +1090,7 @@ import AppointmentsTab from "./tabs/AppointmentsTab";
 import ServicesTab from "./tabs/ServicesTab";
 import SettingsTab from "./tabs/SettingsTab";
 import TablesTab from "./tabs/TablesTab";
+import LocationSetup from "./LocationSetup";
 import { useNavigate, useParams, NavLink } from "react-router-dom";
 import { jwtDecode } from "jwt-decode";
 
@@ -1115,6 +1116,8 @@ export default function RestaurantDashboard() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedService, setSelectedService] = useState(null);
+  const [showLocationSetup, setShowLocationSetup] = useState(false);
+  const locationPrompted = useRef(false);
 
   // Form Initializations
   const [profileForm, setProfileForm] = useState({
@@ -1230,6 +1233,14 @@ export default function RestaurantDashboard() {
         opening_time: restaurateurInfo.opening_time ? String(restaurateurInfo.opening_time).slice(0, 5) : "09:00",
         closing_time: restaurateurInfo.closing_time ? String(restaurateurInfo.closing_time).slice(0, 5) : "18:00",
       });
+    }
+  }, [restaurateurInfo]);
+
+  // Check if location is set — prompt setup if not (only once per session)
+  useEffect(() => {
+    if (!locationPrompted.current && restaurateurInfo && restaurateurInfo.latitude == null && restaurateurInfo.longitude == null) {
+      locationPrompted.current = true;
+      setShowLocationSetup(true);
     }
   }, [restaurateurInfo]);
 
@@ -1526,6 +1537,16 @@ export default function RestaurantDashboard() {
           </Modal.Footer>
         </Form>
       </Modal>
+
+      {showLocationSetup && (
+        <LocationSetup
+          onSaved={() => {
+            setShowLocationSetup(false);
+            fetchProfile();
+          }}
+          onSkip={() => setShowLocationSetup(false)}
+        />
+      )}
     </div>
   );
 }

@@ -64,11 +64,24 @@ export const register = async (req, res) => {
       return Number.isFinite(parsed) ? parsed : null;
     };
 
+    // Validate phone number if provided (10 digits, starts with 98 or 97)
+    const phoneRaw = req.body.phone_number;
+    let phoneNumber = null;
+    if (phoneRaw != null && phoneRaw !== "") {
+      const phoneStr = String(phoneRaw).replace(/\D/g, "");
+      if (!/^(98|97)\d{8}$/.test(phoneStr)) {
+        return res.status(400).json({
+          message: "Phone number must be 10 digits starting with 98 or 97",
+        });
+      }
+      phoneNumber = parseInt(phoneStr);
+    }
+
     const userData = {
       first_name: req.body.first_name,
       last_name: req.body.last_name,
       email: req.body.email,
-      phone_number: req.body.phone_number || null,
+      phone_number: phoneNumber,
       password: hashedPassword,
       role,
       latitude: role === "restaurateurs" ? parseCoordinate(req.body.latitude) : null,

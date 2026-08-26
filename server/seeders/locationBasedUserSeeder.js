@@ -172,14 +172,12 @@ const generateEmail = (firstName, lastName) => {
   return `${formattedFirstName}.${formattedLastName}${randomNum}@${domain}`;
 };
 
-// Generate a random phone number (Nepal format)
+// Generate a random phone number (Nepal format: 10 digits starting with 98 or 97)
 const generatePhoneNumber = () => {
-  const prefixes = ['98', '97', '96', '984'];
-  const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
-  const suffixLength = prefix === '984' ? 6 : 7;
-  const suffix = Math.floor(Math.random() * Math.pow(10, suffixLength))
+  const prefix = Math.random() < 0.5 ? '98' : '97';
+  const suffix = Math.floor(Math.random() * 10000000)
     .toString()
-    .padStart(suffixLength, '0');
+    .padStart(8, '0');
   return parseInt(`${prefix}${suffix}`);
 };
 
@@ -231,17 +229,36 @@ async function seedLocationBasedUsers() {
     // Get Kathmandu area coordinates
     const kathmanduArea = getKathmanduAreaCoordinates();
 
+    // Track used names and phones to ensure uniqueness
+    const usedNames = new Set();
+    const usedPhones = new Set();
+
     // Generate restaurants one by one to handle duplicates
-    const restaurants = [];
     let successfulrestaurants = 0;
 
     console.log('Generating and inserting restaurants one by one...');
 
     for (let i = 0; i < restaurantCount && successfulrestaurants < restaurantCount; i++) {
       try {
-        const firstName = nepaliFirstNames[Math.floor(Math.random() * nepaliFirstNames.length)];
-        const lastName = nepaliLastNames[Math.floor(Math.random() * nepaliLastNames.length)];
-        const phoneNumber = generatePhoneNumber();
+        let firstName = nepaliFirstNames[Math.floor(Math.random() * nepaliFirstNames.length)];
+        let lastName = nepaliLastNames[Math.floor(Math.random() * nepaliLastNames.length)];
+
+        // Ensure unique name by appending a number suffix if needed
+        let fullName = `${firstName} ${lastName}`;
+        let suffix = 1;
+        while (usedNames.has(fullName)) {
+          suffix++;
+          fullName = `${firstName} ${lastName} ${suffix}`;
+        }
+        usedNames.add(fullName);
+
+        // Ensure unique phone number
+        let phoneNumber;
+        do {
+          phoneNumber = generatePhoneNumber();
+        } while (usedPhones.has(phoneNumber));
+        usedPhones.add(phoneNumber);
+
         const location = generateRandomLocation(kathmanduArea.center, kathmanduArea.radius);
         const locationName = getRandomLocationName();
 
@@ -266,14 +283,14 @@ async function seedLocationBasedUsers() {
         // Create the restaurant
         await UsersModel.create({
           first_name: firstName,
-          last_name: lastName,
+          last_name: suffix > 1 ? `${lastName} ${suffix}` : lastName,
           email: email,
           password: defaultPassword,
           phone_number: phoneNumber,
           latitude: location.latitude,
           longitude: location.longitude,
           location_name: locationName,
-          role: 'restaurant',
+          role: 'restaurateurs',
           createdAt: new Date(),
           updatedAt: new Date()
         });
@@ -286,7 +303,6 @@ async function seedLocationBasedUsers() {
         }
       } catch (error) {
         console.error(`Error creating restaurant: ${error.message}`);
-        // Continue with the next restaurant
       }
     }
 
@@ -297,9 +313,25 @@ async function seedLocationBasedUsers() {
 
     for (let i = 0; i < clientCount && successfulClients < clientCount; i++) {
       try {
-        const firstName = nepaliFirstNames[Math.floor(Math.random() * nepaliFirstNames.length)];
-        const lastName = nepaliLastNames[Math.floor(Math.random() * nepaliLastNames.length)];
-        const phoneNumber = generatePhoneNumber();
+        let firstName = nepaliFirstNames[Math.floor(Math.random() * nepaliFirstNames.length)];
+        let lastName = nepaliLastNames[Math.floor(Math.random() * nepaliLastNames.length)];
+
+        // Ensure unique name
+        let fullName = `${firstName} ${lastName}`;
+        let suffix = 1;
+        while (usedNames.has(fullName)) {
+          suffix++;
+          fullName = `${firstName} ${lastName} ${suffix}`;
+        }
+        usedNames.add(fullName);
+
+        // Ensure unique phone number
+        let phoneNumber;
+        do {
+          phoneNumber = generatePhoneNumber();
+        } while (usedPhones.has(phoneNumber));
+        usedPhones.add(phoneNumber);
+
         const location = generateRandomLocation(kathmanduArea.center, kathmanduArea.radius);
         const locationName = getRandomLocationName();
 
@@ -324,7 +356,7 @@ async function seedLocationBasedUsers() {
         // Create the client
         await UsersModel.create({
           first_name: firstName,
-          last_name: lastName,
+          last_name: suffix > 1 ? `${lastName} ${suffix}` : lastName,
           email: email,
           password: defaultPassword,
           phone_number: phoneNumber,
@@ -344,12 +376,11 @@ async function seedLocationBasedUsers() {
         }
       } catch (error) {
         console.error(`Error creating client: ${error.message}`);
-        // Continue with the next client
       }
     }
 
     // Count actual inserted records
-    const actualrestaurantCount = await UsersModel.count({ where: { role: 'restaurant' } });
+    const actualrestaurantCount = await UsersModel.count({ where: { role: 'restaurateurs' } });
     const actualClientCount = await UsersModel.count({ where: { role: 'client' } });
 
     console.log(

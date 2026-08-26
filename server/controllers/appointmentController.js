@@ -126,10 +126,15 @@ async function updateQueuePositions(restaurateurId) {
 }
 
 async function countActiveAppointments(restaurateurId) {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
   const sum = await AppointmentModel.sum("party_size", {
     where: {
       restaurateurId,
       status: { [Op.in]: ["pending", "accepted", "in_progress"] },
+      date: { [Op.gte]: startOfToday, [Op.lte]: endOfToday },
     },
   });
   return Number(sum || 0);
@@ -151,20 +156,23 @@ async function countSlotAppointments(restaurateurId, slotStart, durationMinutes 
   return Number(sum || 0);
 }
 
-async function checkTableAvailability(tableId, bookingDate) {
-  const startOfDay = new Date(bookingDate);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(bookingDate);
-  endOfDay.setHours(23, 59, 59, 999);
+async function checkTableAvailability(tableId, bookingDate, durationMinutes = 45) {
+  const newStart = new Date(bookingDate);
+  const newEnd = new Date(newStart.getTime() + durationMinutes * 60 * 1000);
 
   const existingAppointment = await AppointmentModel.findOne({
     where: {
       table_id: tableId,
-      date: {
-        [Op.gte]: startOfDay,
-        [Op.lte]: endOfDay,
-      },
       status: { [Op.in]: ["pending", "accepted", "in_progress"] },
+      [Op.and]: [
+        { date: { [Op.lt]: newEnd } },
+        {
+          [Op.or]: [
+            { end_time: { [Op.gt]: newStart } },
+            { end_time: null, date: { [Op.gt]: newStart } },
+          ],
+        },
+      ],
     },
   });
 
@@ -349,6 +357,13 @@ export const createAppointment = async (req, res) => {
         });
       }
 
+      if (restaurateur.latitude == null || restaurateur.longitude == null) {
+        return res.status(409).json({
+          success: false,
+          message: "This restaurant has not set its location yet. Bookings are temporarily unavailable.",
+        });
+      }
+
       const durationMinutes = Number(service.duration) || 45;
       if (Number(service.restaurateurId) !== Number(restaurateurId)) {
         return res.status(403).json({
@@ -392,11 +407,11 @@ export const createAppointment = async (req, res) => {
           });
         }
 
-        const isTableAvailable = await checkTableAvailability(tableId, appointmentDate);
+        const isTableAvailable = await checkTableAvailability(tableId, appointmentDate, durationMinutes);
         if (!isTableAvailable) {
           return res.status(409).json({
             success: false,
-            message: "This table is already booked for the selected date.",
+            message: "This table is already booked for the selected time slot.",
           });
         }
       } else {
@@ -958,9 +973,8 @@ export const getAppointmentById = async (req, res) => {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const appointment = await AppointmentModel.findAll({
-      where: { clientId: decodedToken.id },
-      order: [["date", "DESC"]],
+    const appointment = await AppointmentModel.findOne({
+      where: { id: req.params.id, clientId: decodedToken.id },
       include: [
         {
           model: UsersModel,
@@ -1039,7 +1053,7 @@ export const updateAppointment = async (req, res) => {
     if (status && !date && !serviceId) {
       // Validate status
       if (
-        !["pending", "accepted", "rejected", "cancelled", "completed"].includes(
+        !["pending", "accepted", "rejected", "cancelled", "completed", "in_progress", "no_show"].includes(
           status,
         )
       ) {
@@ -1190,6 +1204,9 @@ export const getAppointmentsBybarbarId = async (req, res) => {
             "last_name",
             "email",
             "phone_number",
+            "penalty_score",
+            "is_flagged",
+            "reliability_status",
           ],
         },
         {
@@ -1210,6 +1227,9 @@ export const getAppointmentsBybarbarId = async (req, res) => {
         client_name: appointmentData.client
           ? `${appointmentData.client.first_name} ${appointmentData.client.last_name}`
           : "Unknown Client",
+        client_penalty_score: appointmentData.client?.penalty_score ?? 0,
+        client_is_flagged: appointmentData.client?.is_flagged ?? false,
+        client_reliability_status: appointmentData.client?.reliability_status ?? "reliable",
         service_id: appointmentData.serviceId,
         service_name: appointmentData.service
           ? appointmentData.service.name
@@ -1226,6 +1246,18 @@ export const getAppointmentsBybarbarId = async (req, res) => {
           : null,
       };
     });
+
+    // Calculate competing bookings per slot (same restaurant + same date)
+    const pendingBySlot = {};
+    for (const apt of formattedAppointments) {
+      if (apt.status !== "pending") continue;
+      const slotKey = `${apt.restaurateurs_id}_${new Date(apt.date).toISOString().slice(0, 13)}`;
+      pendingBySlot[slotKey] = (pendingBySlot[slotKey] || 0) + 1;
+    }
+    for (const apt of formattedAppointments) {
+      const slotKey = `${apt.restaurateurs_id}_${new Date(apt.date).toISOString().slice(0, 13)}`;
+      apt.competing_count = pendingBySlot[slotKey] || 0;
+    }
 
     res.status(200).json({
       message: "Appointments retrieved successfully",
@@ -1580,5 +1612,301 @@ export const getAppointmentsByClientId = async (req, res) => {
   } catch (error) {
     console.error("Error fetching client appointments:", error);
     res.status(500).json({ error: error.message });
+  }
+};
+
+export const checkSlotAvailability = async (req, res) => {
+  try {
+    const { table_id, restaurateur_id, date, duration } = req.query;
+
+    if (!restaurateur_id || !date) {
+      return res.status(400).json({
+        success: false,
+        message: "restaurateur_id and date are required",
+      });
+    }
+
+    const appointmentDate = new Date(date);
+    if (Number.isNaN(appointmentDate.getTime())) {
+      return res.status(400).json({ success: false, message: "Invalid date" });
+    }
+
+    const durationMinutes = Number(duration) || 45;
+
+    if (table_id) {
+      const available = await checkTableAvailability(
+        table_id,
+        appointmentDate,
+        durationMinutes,
+      );
+      return res.status(200).json({ success: true, available });
+    }
+
+    const seatsTaken = await countSlotAppointments(
+      restaurateur_id,
+      appointmentDate,
+      durationMinutes,
+    );
+    const restaurateur = await UsersModel.findOne({
+      where: { id: restaurateur_id, role: "restaurateurs" },
+      attributes: ["seat_capacity"],
+    });
+    const capacity = restaurateur?.seat_capacity || 10;
+    const remaining = Math.max(capacity - seatsTaken, 0);
+
+    return res.status(200).json({
+      success: true,
+      available: remaining > 0,
+      seatsTaken,
+      capacity,
+      remaining,
+    });
+  } catch (error) {
+    console.error("checkSlotAvailability error:", error);
+    res.status(500).json({ success: false, message: "Failed to check availability" });
+  }
+};
+
+/**
+ * Manually mark an appointment as no-show (restaurateur only)
+ * @route PUT /api/appointments/:id/no-show
+ */
+export const markNoShow = async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ message: "Unauthorized" });
+
+    const decoded = decodeToken(token);
+    if (!decoded || decoded.role !== "restaurateurs") {
+      return res.status(403).json({ message: "Only restaurateurs can mark no-show" });
+    }
+
+    const { id } = req.params;
+    const appointment = await AppointmentModel.findByPk(id);
+    if (!appointment) {
+      return res.status(404).json({ message: "Appointment not found" });
+    }
+
+    if (appointment.restaurateurId !== decoded.id) {
+      return res.status(403).json({ message: "Only the assigned restaurateur can mark no-show" });
+    }
+
+    const validStatuses = ["pending", "accepted", "in_progress"];
+    if (!validStatuses.includes(appointment.status)) {
+      return res.status(400).json({
+        message: `Cannot mark as no-show from "${appointment.status}" status`,
+      });
+    }
+
+    const [updated] = await AppointmentModel.update(
+      { status: "no_show" },
+      { where: { id } },
+    );
+
+    if (!updated) {
+      return res.status(500).json({ message: "Failed to mark as no-show" });
+    }
+
+    // Create booking history entry
+    try {
+      const dateOnly = appointment.date
+        ? new Date(appointment.date).toISOString().slice(0, 10)
+        : new Date().toISOString().slice(0, 10);
+      const timeSlot = appointment.date
+        ? Math.floor(new Date(appointment.date).getHours() * 4 + new Date(appointment.date).getMinutes() / 15)
+        : 0;
+
+      await BookingHistoryModel.create({
+        user_id: appointment.clientId,
+        restaurant_id: appointment.restaurateurId,
+        booking_date: dateOnly,
+        booking_time_slot: timeSlot,
+        party_size: appointment.party_size || 1,
+        status: "no_show",
+      });
+
+      // Recalculate and cache penalty on user
+      await ScoringEngine.recalculateUserPenalty(appointment.clientId);
+    } catch (historyErr) {
+      console.error("Failed to create booking history on no-show:", historyErr);
+    }
+
+    const updatedAppointment = await AppointmentModel.findByPk(id, {
+      include: [
+        { model: UsersModel, as: "client", attributes: ["id", "first_name", "last_name", "email", "phone_number"] },
+        { model: RestaurateurService, as: "service", attributes: ["id", "name", "price", "duration"] },
+      ],
+    });
+
+    return res.status(200).json({
+      message: "Appointment marked as no-show",
+      data: updatedAppointment,
+    });
+  } catch (error) {
+    console.error("Error marking no-show:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+/**
+ * Mark client arrival time (restaurateur only)
+ * Detects late arrival if >15 min after scheduled time
+ * @route PUT /api/appointments/:id/arrived
+ */
+export const markArrival = async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ message: "Unauthorized" });
+
+    const decoded = decodeToken(token);
+    if (!decoded || decoded.role !== "restaurateurs") {
+      return res.status(403).json({ message: "Only restaurateurs can mark arrival" });
+    }
+
+    const { id } = req.params;
+    const appointment = await AppointmentModel.findByPk(id);
+    if (!appointment) {
+      return res.status(404).json({ message: "Appointment not found" });
+    }
+
+    if (appointment.restaurateurId !== decoded.id) {
+      return res.status(403).json({ message: "Only the assigned restaurateur can mark arrival" });
+    }
+
+    if (!["accepted", "pending"].includes(appointment.status)) {
+      return res.status(400).json({
+        message: `Cannot mark arrival from "${appointment.status}" status`,
+      });
+    }
+
+    if (appointment.actual_arrival_time) {
+      return res.status(400).json({ message: "Arrival already recorded" });
+    }
+
+    const now = new Date();
+    const scheduledTime = new Date(appointment.date);
+    const diffMinutes = (now - scheduledTime) / (1000 * 60);
+    const isLate = diffMinutes > 15;
+
+    const [updated] = await AppointmentModel.update(
+      {
+        actual_arrival_time: now,
+        is_late: isLate,
+        status: "in_progress",
+      },
+      { where: { id } },
+    );
+
+    if (!updated) {
+      return res.status(500).json({ message: "Failed to mark arrival" });
+    }
+
+    // If late, create booking history entry and update penalty
+    if (isLate) {
+      try {
+        const dateOnly = appointment.date
+          ? new Date(appointment.date).toISOString().slice(0, 10)
+          : new Date().toISOString().slice(0, 10);
+        const timeSlot = appointment.date
+          ? Math.floor(new Date(appointment.date).getHours() * 4 + new Date(appointment.date).getMinutes() / 15)
+          : 0;
+
+        await BookingHistoryModel.create({
+          user_id: appointment.clientId,
+          restaurant_id: appointment.restaurateurId,
+          booking_date: dateOnly,
+          booking_time_slot: timeSlot,
+          party_size: appointment.party_size || 1,
+          status: "late_arrival",
+        });
+
+        await ScoringEngine.recalculateUserPenalty(appointment.clientId);
+      } catch (historyErr) {
+        console.error("Failed to create booking history on late arrival:", historyErr);
+      }
+    }
+
+    const updatedAppointment = await AppointmentModel.findByPk(id, {
+      include: [
+        { model: UsersModel, as: "client", attributes: ["id", "first_name", "last_name", "email", "phone_number"] },
+        { model: RestaurateurService, as: "service", attributes: ["id", "name", "price", "duration"] },
+      ],
+    });
+
+    return res.status(200).json({
+      message: isLate
+        ? `Client arrived ${Math.round(diffMinutes)} min late`
+        : "Client arrived on time",
+      is_late: isLate,
+      minutes_late: isLate ? Math.round(diffMinutes) : 0,
+      data: updatedAppointment,
+    });
+  } catch (error) {
+    console.error("Error marking arrival:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+/**
+ * Get client risk profile for restaurateurs
+ * @route GET /api/appointments/client/:clientId/risk-profile
+ */
+export const getClientRiskProfile = async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ message: "Unauthorized" });
+
+    const decoded = decodeToken(token);
+    if (!decoded) return res.status(401).json({ message: "Unauthorized" });
+
+    const { clientId } = req.params;
+
+    const user = await UsersModel.findByPk(clientId, {
+      attributes: [
+        "id", "first_name", "last_name", "email",
+        "penalty_score", "total_no_shows", "total_late_cancellations",
+        "total_late_arrivals", "total_completed_bookings", "is_flagged",
+        "reliability_status",
+      ],
+      raw: true,
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "Client not found" });
+    }
+
+    // Get recent booking history
+    const recentHistory = await BookingHistoryModel.findAll({
+      where: { user_id: clientId },
+      order: [["created_at", "DESC"]],
+      limit: 10,
+      raw: true,
+    });
+
+    // Count total bookings
+    const totalBookings = await BookingHistoryModel.count({
+      where: { user_id: clientId },
+    });
+
+    // Determine risk level
+    let riskLevel = "low";
+    if (user.is_flagged || user.penalty_score > 0.4) {
+      riskLevel = "high";
+    } else if (user.penalty_score > 0.15) {
+      riskLevel = "medium";
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...user,
+        risk_level: riskLevel,
+        total_bookings: totalBookings,
+        recent_history: recentHistory,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching client risk profile:", error);
+    return res.status(500).json({ message: "Internal server error" });
   }
 };

@@ -17,13 +17,51 @@ import {
   FaChevronRight,
   FaTimes,
   FaUser,
+  FaExclamationTriangle,
 } from "react-icons/fa";
 import "../components/client/dashboard.css";
 
-const HOUR_OPTIONS = Array.from({ length: 17 }, (_, i) => {
-  const h = i + 6;
-  return `${String(h).padStart(2, "0")}:00`;
-});
+function parseTimeToMinutes(timeStr) {
+  if (!timeStr) return null;
+  const cleaned = String(timeStr).trim().slice(0, 5);
+  const parts = cleaned.split(":");
+  if (parts.length < 2) return null;
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+function generateTimeSlots(openingTime, closingTime) {
+  const openMin = parseTimeToMinutes(openingTime);
+  const closeMin = parseTimeToMinutes(closingTime);
+  if (openMin === null || closeMin === null || openMin >= closeMin) {
+    return Array.from({ length: 17 }, (_, i) => {
+      const h = i + 6;
+      return `${String(h).padStart(2, "0")}:00`;
+    });
+  }
+  const slots = [];
+  for (let min = openMin; min < closeMin; min += 60) {
+    const h = Math.floor(min / 60);
+    slots.push(`${String(h).padStart(2, "0")}:00`);
+  }
+  return slots;
+}
+
+function generateMinuteOptions(selectedHour, closingTime, durationMinutes = 0) {
+  if (!selectedHour) return [];
+  const hourNum = Number(selectedHour.split(":")[0]);
+  const baseMin = hourNum * 60;
+  const closeMin = parseTimeToMinutes(closingTime) || 24 * 60;
+  const minutes = [0, 15, 30, 45];
+  return minutes
+    .filter((m) => {
+      const slotStart = baseMin + m;
+      return slotStart < closeMin && slotStart + durationMinutes <= closeMin;
+    })
+    .map((m) => `${String(hourNum).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+}
 
 function formatDateShort(d) {
   return new Date(d).toLocaleDateString("en-US", {
@@ -79,6 +117,12 @@ export default function BookTablePage() {
   const [bookingInProgress, setBookingInProgress] = useState(false);
   const [error, setError] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [timeOptions, setTimeOptions] = useState([]);
+  const [slotAvailable, setSlotAvailable] = useState(null);
+  const [checkingSlot, setCheckingSlot] = useState(false);
+  const [showSlotModal, setShowSlotModal] = useState(false);
+  const [selectedHour, setSelectedHour] = useState(null);
+  const [minuteOptions, setMinuteOptions] = useState([]);
 
   const API_BASE =
     api.defaults.baseURL?.replace("/api", "") || "http://localhost:5000";
@@ -94,7 +138,21 @@ export default function BookTablePage() {
           `/restaurateurs-services/${restaurantId}`
         );
         if (restaurantResponse.status === 200) {
-          setRestaurant(restaurantResponse.data.data);
+          const restData = restaurantResponse.data.data;
+          setRestaurant(restData);
+
+          const openTime = restData?.opening_time || "09:00:00";
+          const closeTime = restData?.closing_time || "18:00:00";
+          const hourSlots = generateTimeSlots(openTime, closeTime);
+          setTimeOptions(hourSlots);
+
+          setSelectedHour(null);
+          setMinuteOptions([]);
+          setBookingTime("");
+
+          if (hourSlots.length > 0) {
+            setSelectedHour(hourSlots[0]);
+          }
         }
 
         const tablesResponse = await api.get(
@@ -127,6 +185,61 @@ export default function BookTablePage() {
     if (restaurantId) fetchData();
     else setLoading(false);
   }, [restaurantId]);
+
+  useEffect(() => {
+    if (!selectedHour || !restaurant) {
+      setMinuteOptions([]);
+      return;
+    }
+    const closeTime = restaurant?.closing_time || "18:00:00";
+    const duration = selectedService?.duration || 45;
+    const mins = generateMinuteOptions(selectedHour, closeTime, duration);
+    setMinuteOptions(mins);
+
+    if (bookingTime && !mins.includes(bookingTime)) {
+      setBookingTime(mins.length > 0 ? mins[0] : "");
+    }
+  }, [selectedHour, restaurant, selectedService]);
+
+  useEffect(() => {
+    if (!selectedTable || !selectedService || !bookingTime) {
+      setSlotAvailable(null);
+      return;
+    }
+
+    let cancelled = false;
+    const check = async () => {
+      setCheckingSlot(true);
+      try {
+        const [hours, minutes] = bookingTime.split(":").map(Number);
+        const dateObj = new Date(bookingDate);
+        dateObj.setHours(hours, minutes, 0, 0);
+
+        const params = new URLSearchParams({
+          table_id: selectedTable.id,
+          restaurateur_id: restaurantId,
+          date: dateObj.toISOString(),
+          duration: String(selectedService.duration || 45),
+        });
+
+        const res = await api.get(`/appointments/check-availability?${params}`);
+        if (cancelled) return;
+
+        const available = res.data?.available ?? true;
+        setSlotAvailable(available);
+        if (!available) {
+          setShowSlotModal(true);
+        }
+      } catch {
+        if (!cancelled) setSlotAvailable(null);
+      } finally {
+        if (!cancelled) setCheckingSlot(false);
+      }
+    };
+
+    check();
+    return () => { cancelled = true; };
+  }, [bookingDate, bookingTime, selectedTable, selectedService, restaurantId]);
 
   const handleBookTable = async () => {
     if (!selectedTable || !restaurant || !selectedService) return;
@@ -172,7 +285,10 @@ export default function BookTablePage() {
   };
 
   const totalPrice = selectedService ? selectedService.price * partySize : 0;
+  const hasLocation =
+    restaurant?.latitude != null && restaurant?.longitude != null;
   const canSubmit =
+    hasLocation &&
     selectedTable &&
     selectedService &&
     partySize > 0 &&
@@ -292,22 +408,67 @@ export default function BookTablePage() {
               </div>
             </div>
 
-            {/* Time Selector */}
+            {/* Time Selector — Step 1: Hour */}
             <div className="bk-section">
               <h2 className="bk-section-title">
                 <FaClock /> Pick a Time
               </h2>
+
+              {/* Hour chips */}
               <div className="bk-time-grid">
-                {HOUR_OPTIONS.map((t) => (
-                  <button
-                    key={t}
-                    className={`bk-time-chip ${bookingTime === t ? "bk-time-chip-active" : ""}`}
-                    onClick={() => setBookingTime(t)}
-                  >
-                    {t}
-                  </button>
-                ))}
+                {(timeOptions.length > 0 ? timeOptions : []).map((h) => {
+                  const hourLabel = h.split(":")[0];
+                  return (
+                    <button
+                      key={h}
+                      className={`bk-time-chip ${selectedHour === h ? "bk-time-chip-active" : ""}`}
+                      onClick={() => {
+                        setSelectedHour(h);
+                        setBookingTime("");
+                        setSlotAvailable(null);
+                      }}
+                    >
+                      {hourLabel}:00
+                    </button>
+                  );
+                })}
+                {timeOptions.length === 0 && !loading && (
+                  <p className="bk-hint-text">
+                    No available time slots for this restaurant.
+                  </p>
+                )}
               </div>
+
+              {/* Step 2: Minutes (appear after hour selection) */}
+              {selectedHour && minuteOptions.length > 0 && (
+                <div className="bk-minute-reveal" key={selectedHour}>
+                  <span className="bk-muted-label" style={{ marginBottom: "0.5rem", display: "block" }}>
+                    {selectedHour.split(":")[0]}:00 — select minutes
+                  </span>
+                  <div className="bk-time-grid">
+                    {minuteOptions.map((t, i) => (
+                      <button
+                        key={t}
+                        className={`bk-time-chip bk-minute-chip ${bookingTime === t ? "bk-time-chip-active" : ""} ${bookingTime === t && slotAvailable === false ? "bk-time-chip-unavailable" : ""}`}
+                        style={{ animationDelay: `${i * 40}ms` }}
+                        onClick={() => setBookingTime(t)}
+                      >
+                        {t}
+                        {bookingTime === t && checkingSlot && (
+                          <span className="bk-time-checking" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {slotAvailable === false && !checkingSlot && (
+                <div className="bk-alert bk-alert-error" style={{ marginTop: "0.75rem" }}>
+                  <FaExclamationTriangle style={{ fontSize: "0.8rem" }} />
+                  <span>This table is already booked at <strong>{bookingTime}</strong>. Pick another time.</span>
+                </div>
+              )}
             </div>
 
             {/* Tables */}
@@ -532,14 +693,24 @@ export default function BookTablePage() {
               </div>
 
               {/* Submit */}
+              {!hasLocation && (
+                <div className="bk-alert bk-alert-error" style={{ marginBottom: "0.75rem" }}>
+                  <FaExclamationTriangle style={{ fontSize: "0.8rem" }} />
+                  <span>This restaurant hasn't set its location yet. Bookings are temporarily unavailable.</span>
+                </div>
+              )}
               <button
                 className={`bk-btn bk-btn-primary bk-btn-full ${bookingInProgress ? "bk-btn-loading" : ""}`}
                 onClick={handleBookTable}
-                disabled={!canSubmit || bookingInProgress}
+                disabled={!canSubmit || bookingInProgress || slotAvailable === false || checkingSlot}
               >
                 {bookingInProgress ? (
                   <>
                     <Spinner animation="border" size="sm" /> Booking...
+                  </>
+                ) : checkingSlot ? (
+                  <>
+                    <Spinner animation="border" size="sm" /> Checking...
                   </>
                 ) : (
                   <>
@@ -548,15 +719,23 @@ export default function BookTablePage() {
                 )}
               </button>
 
-              {!canSubmit && !bookingInProgress && (
+              {slotAvailable === false && !checkingSlot && (
+                <p className="bk-hint-text" style={{ color: "#dc2626" }}>
+                  Selected time slot is unavailable
+                </p>
+              )}
+
+              {!canSubmit && !bookingInProgress && slotAvailable !== false && (
                 <p className="bk-hint-text">
-                  {!selectedTable
-                    ? "Select a table to continue"
-                    : !selectedService
-                      ? "Choose a service"
-                      : partySize > (selectedTable?.capacity || 0)
-                        ? "Reduce party size"
-                        : "Complete all fields"}
+                  {!hasLocation
+                    ? "Restaurant location not set"
+                    : !selectedTable
+                      ? "Select a table to continue"
+                      : !selectedService
+                        ? "Choose a service"
+                        : partySize > (selectedTable?.capacity || 0)
+                          ? "Reduce party size"
+                          : "Complete all fields"}
                 </p>
               )}
             </div>
@@ -604,6 +783,46 @@ export default function BookTablePage() {
             onClick={() => navigate("/client/dashboard", { replace: true })}
           >
             View My Bookings
+          </button>
+        </div>
+      </Modal>
+
+      {/* Slot Unavailable Modal */}
+      <Modal
+        show={showSlotModal}
+        centered
+        backdrop="static"
+        className="bk-success-modal"
+        onHide={() => setShowSlotModal(false)}
+      >
+        <div className="bk-success-content">
+          <div className="bk-success-icon-wrap" style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", boxShadow: "0 8px 24px rgba(220,38,38,0.3)" }}>
+            <FaExclamationTriangle />
+          </div>
+          <h2 className="bk-success-title">Slot Unavailable</h2>
+          <p className="bk-success-text">
+            Table <strong>{selectedTable?.table_number}</strong> is already booked at <strong>{bookingTime}</strong> on <strong>{formatDateShort(bookingDate)}</strong>.
+            Please select a different time or table.
+          </p>
+          <div className="bk-success-details">
+            <div className="bk-success-detail">
+              <span>Table</span>
+              <strong>Table {selectedTable?.table_number}</strong>
+            </div>
+            <div className="bk-success-detail">
+              <span>Time</span>
+              <strong>{bookingTime}</strong>
+            </div>
+            <div className="bk-success-detail">
+              <span>Date</span>
+              <strong>{formatDateShort(bookingDate)}</strong>
+            </div>
+          </div>
+          <button
+            className="bk-btn bk-btn-primary bk-btn-full"
+            onClick={() => setShowSlotModal(false)}
+          >
+            Pick Another Time
           </button>
         </div>
       </Modal>

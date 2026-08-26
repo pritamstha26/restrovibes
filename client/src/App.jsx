@@ -2,6 +2,7 @@ import React, { useEffect } from "react";
 import { Route, Routes, useNavigate } from "react-router-dom";
 import routes from "./routes/routes";
 import { Container } from "react-bootstrap";
+import ErrorBoundary from "./components/ErrorBoundary";
 import "./App.css";
 
 function App() {
@@ -29,9 +30,11 @@ function App() {
   return (
     <div className="app-shell">
       <Container fluid className="app-shell__inner p-0">
-        <Routes>
-          {renderRoutes(routes)}
-        </Routes>
+        <ErrorBoundary>
+          <Routes>
+            {renderRoutes(routes)}
+          </Routes>
+        </ErrorBoundary>
       </Container>
     </div>
   );

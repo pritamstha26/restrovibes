@@ -98,6 +98,16 @@ const AppointmentModel = sequelize.define("AppointmentModel", {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
+  actual_arrival_time: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: "When the client actually arrived (set by restaurateur)",
+  },
+  is_late: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    comment: "True if client arrived more than 15 min after scheduled time",
+  },
 });
 
 // Associations remain the same

@@ -45,39 +45,44 @@ export function findNearbyRestaurateurs(
   clientLat,
   clientLng,
   restaurateurs,
-  maxDistance = 10,
+  maxDistance = null,
 ) {
   // Validate inputs
-  if (!clientLat || !clientLng || !Array.isArray(restaurateurs)) {
+  if (!Number.isFinite(clientLat) || !Number.isFinite(clientLng) || !Array.isArray(restaurateurs)) {
     return [];
   }
 
   // Calculate distance for each restaurant
-  const restaurateursWithDistance = restaurateurs.map((restaurateurs) => {
+  const restaurateursWithDistance = restaurateurs.map((restaurateur) => {
+    const rLat = Number(restaurateur.latitude);
+    const rLng = Number(restaurateur.longitude);
+
     // Skip restaurants without location data
-    if (!restaurateurs.latitude || !restaurateurs.longitude) {
-      return { ...restaurateurs, distance: Infinity };
+    if (!Number.isFinite(rLat) || !Number.isFinite(rLng)) {
+      return { ...restaurateur, distance: Infinity };
     }
 
     const distance = calculateDistance(
       clientLat,
       clientLng,
-      restaurateurs.latitude,
-      restaurateurs.longitude,
+      rLat,
+      rLng,
     );
 
     return {
-      ...restaurateurs,
+      ...restaurateur,
       distance: parseFloat(distance.toFixed(2)), // Round to 2 decimal places
     };
   });
 
-  // Filter restaurants within the maximum distance
-  const nearbyRestaurateurs = restaurateursWithDistance.filter(
-    (restaurateurs) =>
-      restaurateurs.distance !== Infinity &&
-      restaurateurs.distance <= maxDistance,
-  );
+  // Filter restaurants within the maximum distance (skip if no maxDistance)
+  const nearbyRestaurateurs = maxDistance != null
+    ? restaurateursWithDistance.filter(
+        (r) =>
+          r.distance !== Infinity &&
+          r.distance <= maxDistance,
+      )
+    : restaurateursWithDistance.filter((r) => r.distance !== Infinity);
 
   // Sort by distance (closest first)
   return nearbyRestaurateurs.sort((a, b) => a.distance - b.distance);

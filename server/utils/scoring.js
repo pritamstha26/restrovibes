@@ -107,14 +107,16 @@ export class ScoringEngine {
     const noShows = map.no_show || 0;
     const lateCancellations = map.late_cancelled || 0;
     const overstays = map.overstayed || 0;
-    const totalBookings = completed + noShows + lateCancellations + overstays;
+    const lateArrivals = map.late_arrival || 0;
+    const totalBookings = completed + noShows + lateCancellations + overstays + lateArrivals;
 
     if (totalBookings === 0) {
       return 0;
     }
 
-    const rawPenalty = (noShows * 0.7 + lateCancellations * 0.3 + overstays * 0.15) / totalBookings;
-    const decay = completed * 0.05;
+    const rawPenalty = (noShows * 0.7 + lateArrivals * 0.4 + lateCancellations * 0.3 + overstays * 0.15) / totalBookings;
+    const completionRatio = completed / totalBookings;
+    const decay = Math.min(completionRatio * 0.15, rawPenalty * 0.3);
 
     let penalty = rawPenalty - decay;
     if (penalty < 0) penalty = 0;
@@ -176,5 +178,47 @@ export class ScoringEngine {
     if (predicted < 0) return 0;
 
     return predicted;
+  }
+
+  /**
+   * Recalculate and cache penalty stats on the User record
+   * Call this after any booking status change
+   */
+  static async recalculateUserPenalty(userId) {
+    const counts = await BookingHistoryModel.findAll({
+      where: { user_id: userId },
+      attributes: [
+        "status",
+        [BookingHistoryModel.sequelize.fn("COUNT", BookingHistoryModel.sequelize.col("id")), "count"],
+      ],
+      group: ["status"],
+      raw: true,
+    });
+
+    const map = {};
+    for (const row of counts) {
+      map[row.status] = parseInt(row.count, 10);
+    }
+
+    const penalty = await this.calculatePenalty(userId);
+
+    let reliability_status = "reliable";
+    if (penalty > 0.4) reliability_status = "flagged";
+    else if (penalty > 0.15) reliability_status = "at_risk";
+
+    await UsersModel.update(
+      {
+        penalty_score: penalty,
+        total_no_shows: map.no_show || 0,
+        total_late_cancellations: map.late_cancelled || 0,
+        total_late_arrivals: map.late_arrival || 0,
+        total_completed_bookings: map.completed || 0,
+        is_flagged: penalty > 0.4,
+        reliability_status,
+      },
+      { where: { id: userId } },
+    );
+
+    return penalty;
   }
 }

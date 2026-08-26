@@ -130,6 +130,12 @@ export default function AdminBookings() {
       case "rejected":
         styleClass += "slick-badge-rejected";
         break;
+      case "no_show":
+        styleClass += "slick-badge-no_show";
+        break;
+      case "late_arrival":
+        styleClass += "slick-badge-late_arrival";
+        break;
       default:
         styleClass += "slick-badge-secondary";
     }

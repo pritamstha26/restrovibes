@@ -258,6 +258,9 @@
 .status-flag-completed { color: #065f46; background: #ecfdf5; border-color: #6ee7b7; }
 .status-flag-cancelled { color: #991b1b; background: #fef2f2; border-color: #fca5a5; }
 .status-flag-rejected { color: #9d174d; background: #fdf2f8; border-color: #f9a8d4; }
+.status-flag-no_show { color: #7f1d1d; background: #fef2f2; border-color: #fca5a5; }
+.status-flag-late_arrival { color: #92400e; background: #fffbeb; border-color: #fcd34d; }
+.status-flag-overstayed { color: #6b21a8; background: #faf5ff; border-color: #d8b4fe; }
 
 /* Operational Buttons Control Architecture */
 .control-btn {

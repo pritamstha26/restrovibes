@@ -1,5 +1,5 @@
-export const DEFAULT_RESTAURANT_COORDS = [40.758, -73.9855];
-export const DEFAULT_CLIENT_COORDS = [40.7306, -73.9352];
+export const DEFAULT_RESTAURANT_COORDS = [27.7172, 85.324];
+export const DEFAULT_CLIENT_COORDS = [27.7172, 85.324];
 
 export function haversineDistanceKm([lat1, lng1], [lat2, lng2]) {
   const toRad = (value) => (value * Math.PI) / 180;

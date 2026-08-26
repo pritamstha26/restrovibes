@@ -13,10 +13,10 @@ import { Op } from "sequelize";
  */
 export const getNearbyRestaurateurs = async (req, res) => {
   try {
-    const { latitude, longitude, maxDistance = 10 } = req.query;
+    const { latitude, longitude, maxDistance } = req.query;
     const clientLat = parseFloat(latitude);
     const clientLng = parseFloat(longitude);
-    const maxDistanceKm = parseFloat(maxDistance);
+    const maxDistanceKm = maxDistance != null ? parseFloat(maxDistance) : null;
     const hasValidCoordinates = Number.isFinite(clientLat) && Number.isFinite(clientLng);
 
     let excludeUserId = null;
@@ -53,46 +53,36 @@ export const getNearbyRestaurateurs = async (req, res) => {
       raw: true,
     });
 
-    const withDistance = restaurateurs.map((restaurateur) => {
-      let distance = null;
+    let withDistance;
+    if (hasValidCoordinates) {
+      withDistance = findNearbyRestaurateurs(
+        clientLat,
+        clientLng,
+        restaurateurs,
+        maxDistanceKm,
+      );
 
-      if (
-        hasValidCoordinates &&
-        Number.isFinite(clientLat) &&
-        Number.isFinite(clientLng) &&
-        restaurateur.latitude != null &&
-        restaurateur.longitude != null
-      ) {
-        distance = parseFloat(
-          calculateDistance(
-            clientLat,
-            clientLng,
-            Number(restaurateur.latitude),
-            Number(restaurateur.longitude),
-          ).toFixed(2),
-        );
-      }
-
-      return {
-        ...restaurateur,
-        distance,
-      };
-    });
-
-    withDistance.sort((a, b) => {
-      if (a.distance === null && b.distance === null) return 0;
-      if (a.distance === null) return 1;
-      if (b.distance === null) return -1;
-      return a.distance - b.distance;
-    });
+      // Estimate driving duration using average city speed (30 km/h)
+      withDistance = withDistance.map((r) => ({
+        ...r,
+        duration: r.distance != null ? Math.round((r.distance / 30) * 3600) : null,
+      }));
+    } else {
+      withDistance = restaurateurs.map((r) => ({ ...r, distance: null }));
+    }
 
     const nearbyWithOccupancy = await Promise.all(
       withDistance.map(async (restaurateur) => {
         const seatCapacity = restaurateur.seat_capacity || 10;
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 59, 59, 999);
         const activeAppointments = await AppointmentModel.count({
           where: {
             restaurateurId: restaurateur.id,
             status: { [Op.in]: ["pending", "accepted", "in_progress"] },
+            date: { [Op.gte]: startOfToday, [Op.lte]: endOfToday },
           },
         });
 
@@ -285,10 +275,10 @@ export const getDistanceToUser = async (req, res) => {
 
     // Check if both users have location data
     if (
-      !currentUser.latitude ||
-      !currentUser.longitude ||
-      !otherUser.latitude ||
-      !otherUser.longitude
+      !Number.isFinite(Number(currentUser.latitude)) ||
+      !Number.isFinite(Number(currentUser.longitude)) ||
+      !Number.isFinite(Number(otherUser.latitude)) ||
+      !Number.isFinite(Number(otherUser.longitude))
     ) {
       return res.status(400).json({
         success: false,
@@ -296,12 +286,12 @@ export const getDistanceToUser = async (req, res) => {
       });
     }
 
-    // Calculate distance
+    // Calculate distance using haversine
     const distance = calculateDistance(
-      currentUser.latitude,
-      currentUser.longitude,
-      otherUser.latitude,
-      otherUser.longitude,
+      Number(currentUser.latitude),
+      Number(currentUser.longitude),
+      Number(otherUser.latitude),
+      Number(otherUser.longitude),
     );
 
     return res.status(200).json({
@@ -312,7 +302,8 @@ export const getDistanceToUser = async (req, res) => {
           name: `${otherUser.first_name} ${otherUser.last_name}`,
           location_name: otherUser.location_name,
         },
-        distance: parseFloat(distance.toFixed(2)), // Distance in km, rounded to 2 decimal places
+        distance: parseFloat(distance.toFixed(2)),
+        duration: Math.round((distance / 30) * 3600),
         unit: "km",
       },
     });

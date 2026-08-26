@@ -363,6 +363,8 @@
 .slick-badge-completed { background: #ecfdf5; color: #065f46; border: 1px solid #6ee7b7; }
 .slick-badge-cancelled { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
 .slick-badge-rejected { background: #fdf2f8; color: #9d174d; border: 1px solid #f9a8d4; }
+.slick-badge-no_show { background: #fef2f2; color: #7f1d1d; border: 1px solid #fca5a5; }
+.slick-badge-late_arrival { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
 
 .slick-empty-state {
   font-size: 0.82rem;

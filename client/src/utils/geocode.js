@@ -35,3 +35,38 @@ export async function reverseGeocode(lat, lng) {
     return null;
   }
 }
+
+export async function forwardGeocode(address) {
+  try {
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    url.searchParams.set("format", "json");
+    url.searchParams.set("q", address);
+    url.searchParams.set("limit", "1");
+    url.searchParams.set("accept-language", "en");
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        "User-Agent": "restrovibe-client/1.0",
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    if (!data || data.length === 0) {
+      return null;
+    }
+
+    const result = data[0];
+    return {
+      latitude: parseFloat(result.lat),
+      longitude: parseFloat(result.lon),
+      display_name: result.display_name || address,
+    };
+  } catch (error) {
+    console.warn("Forward geocode failed:", error);
+    return null;
+  }
+}

@@ -250,7 +250,11 @@ const RestaurantProfile = ({ restaurantId }) => {
                         <span className="s-vis-price-hint">Price</span>
                         <div className="s-vis-price">Rs. {service.price}</div>
                       </div>
-                      <button className="s-vis-btn" onClick={() => handleServiceSelect(service)}>
+                      <button
+                        className="s-vis-btn"
+                        style={{ background: "linear-gradient(135deg, #4f46e5, #6366f1)" }}
+                        onClick={() => handleServiceSelect(service)}
+                      >
                         Book Table
                       </button>
                     </div>

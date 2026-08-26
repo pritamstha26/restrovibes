@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { connectDB } from "./config/db.js";
 import { startOverstayWorker } from "./overstayWorker.js";
+import { startAutoAcceptWorker } from "./autoAcceptWorker.js";
 import userRoutes from "./routes/userRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import appointmentRoutes from "./routes/appointmentRoutes.js";
@@ -15,6 +16,7 @@ import tableRoutes from "./routes/tableRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
 import ServiceModel from "./models/service.js";
 import sequelize from "./config/db.js";
+import { DataTypes } from "sequelize";
 import { lotteryScheduler } from "./jobs/lotteryScheduler.js";
 dotenv.config();
 const app = express();
@@ -84,30 +86,17 @@ const addPostgresEnumValue = async (enumType, value) => {
   }
 };
 
-try {
-  // Ensure the appointment status enum includes all supported values before syncing.
-  await addPostgresEnumValue("enum_AppointmentModels_status", "in_progress");
-  await addPostgresEnumValue("enum_AppointmentModels_status", "completed");
-  await addPostgresEnumValue("enum_AppointmentModels_status", "no_show");
-
-  // Attempt to sync models to DB in dev, but don't crash the app on failure.
-  await sequelize.sync({ alter: true  });
-  await repairServiceOwnershipIndexes();
-  lotteryScheduler.start();
-} catch (syncErr) {
-  console.warn(
-    "Sequelize sync (alter) failed. This can happen when the DB schema diverges from models. Skipping sync; please run migrations instead.",
-    syncErr.message || syncErr,
-  );
-}
 // Middleware
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 // Allow the default Vite port and a common fallback (5174) used when 5173 is occupied
 const allowedOrigins = [
   FRONTEND_URL,
+  "http://localhost:5173",
   "http://localhost:5174",
+  "http://localhost:5175",
   "http://127.0.0.1:5173",
   "http://127.0.0.1:5174",
+  "http://127.0.0.1:5175",
 ];
 
 app.use(
@@ -159,9 +148,75 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
+// Run DB sync and seed in background after server is listening
+(async () => {
+  try {
+    await addPostgresEnumValue("enum_AppointmentModels_status", "in_progress");
+    await addPostgresEnumValue("enum_AppointmentModels_status", "completed");
+    await addPostgresEnumValue("enum_AppointmentModels_status", "no_show");
+    await addPostgresEnumValue("enum_BookingHistoryModels_status", "late_arrival");
+
+    // Add new columns if they don't exist
+    const qi = sequelize.getQueryInterface();
+    const addColumnIfMissing = async (table, col, definition) => {
+      try {
+        await qi.describeTable(table);
+        const cols = await qi.describeTable(table);
+        if (!cols[col]) {
+          await qi.addColumn(table, col, definition);
+        }
+      } catch { /* table might not exist yet, sync will handle it */ }
+    };
+
+    await addColumnIfMissing("AppointmentModels", "actual_arrival_time", {
+      type: DataTypes.DATE,
+      allowNull: true,
+    });
+    await addColumnIfMissing("AppointmentModels", "is_late", {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    });
+    await addColumnIfMissing("UsersModels", "total_late_arrivals", {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+    });
+    await addColumnIfMissing("UsersModels", "total_no_shows", {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+    });
+    await addColumnIfMissing("UsersModels", "total_late_cancellations", {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+    });
+    await addColumnIfMissing("UsersModels", "penalty_score", {
+      type: DataTypes.FLOAT,
+      defaultValue: 0,
+    });
+    await addColumnIfMissing("UsersModels", "is_flagged", {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    });
+    await addColumnIfMissing("UsersModels", "reliability_status", {
+      type: DataTypes.STRING,
+      defaultValue: "reliable",
+    });
+
+    await sequelize.sync({ alter: false });
+    await repairServiceOwnershipIndexes();
+    lotteryScheduler.start();
+  } catch (syncErr) {
+    console.warn(
+      "Sequelize sync (alter) failed. This can happen when the DB schema diverges from models. Skipping sync; please run migrations instead.",
+      syncErr.message || syncErr,
+    );
+  }
+})();
+
 // Start background workers
 try {
+  // lotteryScheduler.start(); // Disabled — manual accept/reject flow only
   startOverstayWorker();
+  startAutoAcceptWorker();
 } catch (err) {
   console.warn("Could not start overstay worker:", err.message || err);
 }

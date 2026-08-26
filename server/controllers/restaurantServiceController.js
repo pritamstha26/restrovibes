@@ -49,6 +49,9 @@ export const getRestaurateursById = async (req, res) => {
         "seat_capacity",
         "opening_time",
         "closing_time",
+        "latitude",
+        "longitude",
+        "location_name",
       ],
     });
     if (!restaurateurs) {
