@@ -1,0 +1,96 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 160
+
+title Figure 3.7 - Sequence Diagram of RestroVibes Restaurant Appointment System
+
+actor Client
+actor Restaurateur
+actor Admin
+
+participant "Web Interface" as Web
+participant "AppointmentController" as Controller
+participant "ScoringEngine" as Scoring
+participant "Background Workers" as Workers
+participant "Database" as DB
+
+' --- AUTHENTICATION ---
+Client -> Web : login
+Web -> Controller : authenticate
+Controller -> DB : verify credentials & role
+DB --> Controller : authenticated
+Controller --> Web : JWT tokens
+Web --> Client : role dashboard
+
+' --- SLOT DISCOVERY ---
+Client -> Web : browse slots
+Web -> Controller : getAvailableSlots()
+Controller -> DB : fetch capacity & availability
+DB --> Controller : slot data
+Controller --> Web : slots with seats remaining
+Web --> Client : show slots
+
+' --- BOOKING ---
+Client -> Web : book appointment
+Web -> Controller : createBooking()
+Controller -> DB : check seat capacity
+DB --> Controller : OK
+Controller -> Scoring : calculateWeight(clientId)
+Scoring -> DB : fetch history
+Scoring --> Controller : weight
+Controller -> DB : create appointment
+
+alt Contested (>= 2 pending)
+    Controller -> DB : status = "pending" + lottery entry
+    Controller --> Web : 202 in lottery
+    Web --> Client : awaiting resolution
+else Direct (no competition)
+    Controller -> DB : status = "accepted"
+    Controller --> Web : 201 confirmed
+    Web --> Client : booking confirmed
+end
+
+' --- BACKGROUND WORKERS ---
+Workers -> DB : Auto-Accept: solo pending > 20min
+Workers -> DB : Lottery: contested slots (weighted random)
+Workers -> DB : Overstay: no-shows + overstays
+Workers -> Scoring : recalculate penalties
+Scoring -> DB : update reliability scores
+
+' --- RESTAURATEUR ---
+Restaurateur -> Web : view bookings
+Web -> Controller : getBookings()
+Controller -> DB : fetch + client risk data
+DB --> Controller : appointments
+Controller --> Web : dashboard with risk badges
+Web --> Restaurateur : confirmed bookings
+
+Restaurateur -> Web : mark arrived / complete / no-show
+Web -> Controller : updateStatus()
+Controller -> DB : update status + booking history
+Controller -> Scoring : recalculatePenalty()
+Scoring -> DB : updated scores
+Controller --> Web : done
+Web --> Restaurateur : confirmation
+
+' --- ADMIN ---
+Admin -> Web : review flagged users
+Web -> Controller : getFlaggedUsers()
+Controller -> DB : penalty_score > 0.4
+DB --> Controller : flagged list
+Controller --> Web : admin dashboard
+Web --> Admin : flagged accounts
+
+Admin -> Web : override score
+Web -> Controller : updateScore()
+Controller -> Scoring : recalculate()
+Scoring -> DB : updated
+Controller --> Web : recorded
+Web --> Admin : confirmation
+
+@enduml

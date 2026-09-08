@@ -1,0 +1,52 @@
+@startuml
+' RestroVibes — High-Level Class Diagram
+' Render: plantuml class-diagram-highlevel.puml
+left to right direction
+
+class UsersModel {
+  +INTEGER id
+  +ENUM role
+}
+
+class AppointmentModel {
+  +INTEGER id
+  +DATE date
+  +ENUM status
+}
+
+class RestaurateurService {
+  +INTEGER id
+  +STRING name
+  +INTEGER price
+}
+
+class TableModel {
+  +INTEGER id
+  +INTEGER capacity
+}
+
+class BookingHistoryModel {
+  +INTEGER id
+  +DATEONLY booking_date
+}
+
+class LotteryPoolModel {
+  +INTEGER id
+  +DATEONLY booking_date
+}
+
+class RatingModel {
+  +INTEGER id
+  +INTEGER rating
+}
+
+UsersModel "1" --> "0..*" AppointmentModel : books as client / manages as restaurateur
+UsersModel "1" --> "0..*" RestaurateurService : owns
+UsersModel "1" --> "0..*" TableModel : manages
+UsersModel "1" --> "0..*" BookingHistoryModel : accumulates
+UsersModel "1" --> "0..*" LotteryPoolModel : enters
+RestaurateurService "1" --> "0..*" AppointmentModel : fulfills
+RatingModel "M" --> "1" AppointmentModel : rates
+RatingModel "M" --> "1" UsersModel : rates
+
+@enduml

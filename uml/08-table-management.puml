@@ -1,0 +1,84 @@
+@startuml RestroVibes - Table Management
+!theme plain
+title RestroVibes - Table Management & Image Upload
+
+actor Restaurateur as R
+actor Admin as A
+participant "Frontend" as FE
+participant "Express API" as API
+participant "Multer\nMiddleware" as Multer
+participant "PostgreSQL" as DB
+participant "File System\n(uploads/)" as FS
+
+== CREATE TABLE ==
+
+R -> FE : Add table (number, capacity)
+FE -> API : POST /api/tables\n{ restaurateurId, table_number: "T1",\ncapacity: 4 }
+API -> API : Authenticate token\nVerify role = "restaurateurs" or "admin"
+API -> API : If restaurateur:\nVerify token.id == restaurateurId
+API -> DB : Check duplicate\n(restaurateur_id, table_number)
+API -> DB : INSERT INTO tables\n(restaurateur_id, table_number,\ncapacity, is_active=true,\nimages=[])
+DB --> API : Table created (id=1)
+API --> FE : 201 { table: { id: 1, table_number: "T1",\ncapacity: 4, images: [] }}
+
+== UPLOAD TABLE IMAGES ==
+
+R -> FE : Select images (max 10)
+FE -> API : POST /api/uploads/tables/:id/images\nmultipart/form-data
+
+API -> Multer : upload.array("images", 10)
+Multer -> Multer : File filter:\n- Only jpeg, jpg, png, webp\n- Max 5MB per file
+Multer -> FS : Save to uploads/\n{timestamp}-{random}.{ext}
+FS --> Multer : File saved
+Multer --> API : req.files = [{ filename, path }]
+
+API -> DB : Find table by :id
+API -> API : Map files to paths:\n["/uploads/1234.jpg", "/uploads/5678.png"]
+API -> DB : UPDATE images = images || newPaths\n(appended to existing array)
+DB --> API : Updated
+API --> FE : 200 { images: [...] }
+
+== DELETE TABLE IMAGE ==
+
+R -> FE : Remove specific image
+FE -> API : DELETE /api/uploads/tables/:id/images/:filename
+API -> DB : Find table by :id
+API -> DB : Filter images array:\nremove "/uploads/:filename"
+API -> API : Verify image was in array
+API -> FS : fs.unlinkSync("uploads/:filename")
+FS --> API : File deleted
+API -> DB : UPDATE images = filtered array
+API --> FE : 200 Image deleted
+
+== UPDATE TABLE ==
+
+R -> FE : Edit table (number, capacity, active)
+FE -> API : PUT /api/tables/:id\n{ table_number: "T1A", capacity: 6,\nis_active: false }
+API -> DB : Find table by :id
+API -> API : Ownership check:\nAdmin: can update any\nRestaurateur: must own table
+API -> API : Validate: capacity > 0
+API -> DB : UPDATE table_number,\ncapacity, is_active
+API --> FE : 200 Updated
+
+== DELETE TABLE ==
+
+R -> FE : Delete table
+FE -> API : DELETE /api/tables/:id
+API -> DB : Find table by :id
+API -> API : Ownership check
+API -> DB : DELETE FROM tables WHERE id = :id
+API --> FE : 200 Deleted
+
+== GET RESTAURANT TABLES ==
+
+R -> FE : View my tables
+FE -> API : GET /api/tables/restaurant/:restaurateurId
+API -> DB : SELECT * FROM tables\nWHERE restaurateur_id = :id\nORDER BY table_number
+DB --> API : Table list
+API --> FE : [{ id: 1, table_number: "T1",\ncapacity: 4, images: [...],\nis_active: true }]
+
+== TABLE USAGE IN BOOKING ==
+
+note over API,DB : When client books with a specific table_id:\n1. Verify table belongs to restaurateur\n2. Verify party_size <= table.capacity\n3. Check table availability:\n   No overlapping appointments on same table\n   in [date, end_time) window
+
+@enduml

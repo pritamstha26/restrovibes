@@ -1,0 +1,82 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam componentStyle uml2
+skinparam componentFontSize 11
+skinparam defaultTextAlignment center
+skinparam packageFontSize 12
+skinparam nodesep 50
+skinparam ranksep 40
+skinparam arrowFontSize 10
+
+title Figure 3.8 - Component Diagram of RestroVibes Restaurant Appointment System
+
+package "Client Tier\n(React SPA - Vite)" as client {
+    [Client Portal] as CP
+    [Restaurateur Portal] as RP
+    [Admin Panel] as AP
+    [API Layer\n(Axios + JWT)] as AX
+}
+
+package "Server Tier\n(Express - Node.js)" as server {
+    [Route & Middleware Layer] as RM
+    [Controller Layer] as CTRL
+    [Background Workers\n(Overstay, Auto-Accept, Lottery)] as WORK
+    [Business Logic Engine\n(Scoring, Lottery, Haversine)] as ENG
+    [Data Access Layer\n(Sequelize ORM)] as DAL
+}
+
+package "Data Tier" as data {
+    database "PostgreSQL" as DB
+    storage "File System\n(uploads/)" as FS
+    queue "Email Service\n(Nodemailer)" as MAIL
+}
+
+cloud "External Services" as ext {
+    [OpenStreetMap] as OSM
+    [Geolocation API] as GEO
+}
+
+' Frontend internal
+CP --> AX
+RP --> AX
+AP --> AX
+
+' Frontend -> Server
+AX -down-> RM : HTTP/REST\n(JWT Bearer)
+
+' Server internal
+RM -down-> CTRL
+CTRL -down-> ENG
+CTRL -down-> DAL
+WORK ..> ENG
+WORK ..> DAL
+
+' Server -> Data
+DAL -down-> DB
+CTRL -right-> FS
+CTRL -right-> MAIL
+
+' Frontend -> External
+CP ..> OSM : Map tiles
+CP ..> GEO : GPS position
+
+note bottom of client
+  Role-based portals
+  (Client, Restaurateur, Admin)
+end note
+
+note bottom of server
+  3 background workers
+  Scoring + Lottery engine
+end note
+
+note bottom of data
+  Persistent storage
+  File uploads + Email
+end note
+
+caption Figure 3.8: Component Diagram of RestroVibes Restaurant Appointment System
+@enduml

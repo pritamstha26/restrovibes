@@ -1,0 +1,69 @@
+@startuml RestroVibes Appointment Lifecycle
+!theme plain
+title RestroVibes - Appointment Lifecycle (Full State Machine)
+
+actor Client
+actor Restaurateur
+participant "Express API" as API
+participant "PostgreSQL" as DB
+participant "Overstay Worker\n(every 60s)" as Overstay
+participant "ScoringEngine" as Score
+
+== RESTAURATEUR MANAGES APPOINTMENT ==
+
+Restaurateur -> API : PUT /api/appointments/:id/confirm
+API -> DB : Update status -> "accepted"
+API --> Restaurateur : Confirmed
+
+Restaurateur -> API : PUT /api/appointments/:id/arrived
+API -> API : Check lateness: (now - scheduledTime) / 60
+alt Client is >15 min late
+    API -> DB : Create BookingHistory (status="late_arrival")
+    API -> Score : Recalculate client penalty
+    Score -> Score : penalty += lateArrivals x 0.4
+    Score --> API : Updated penalty score
+end
+API -> DB : Update status -> "in_progress"
+API --> Restaurateur : Marked as arrived
+
+Restaurateur -> API : PUT /api/appointments/:id/complete
+API -> DB : Update status -> "completed"
+API -> DB : Create BookingHistory (status="completed")
+API -> Score : Recalculate client penalty (positive)
+Score --> API : Updated penalty score
+API --> Restaurateur : Appointment completed
+
+== CLIENT REQUESTS EXTENSION ==
+
+Client -> API : POST /api/appointments/:id/extend\n{ extra_minutes: 30 }
+API -> DB : Re-check seat capacity for extension window
+API -> DB : Update extended_until + end_time
+API --> Client : Extended successfully
+
+== CLIENT CANCELS ==
+
+Client -> API : PUT /api/appointments/:id/cancel
+API -> DB : Update status -> "cancelled"
+API --> Client : Cancelled
+
+== OVERSTAY WORKER (background) ==
+
+loop Every 60 seconds
+    Overstay -> DB : Find in_progress appointments\npast end_time + 10 min grace
+    loop For each overstayed appointment
+        Overstay -> DB : Update status -> "completed"\n+ Create BookingHistory (status="overstayed")
+        Overstay -> Score : Recalculate client penalty
+        Score -> Score : penalty += overstays x 0.15
+        Score --> Overstay : Updated score
+    end
+
+    Overstay -> DB : Find pending/accepted appointments\npast end_time + grace (never started)
+    loop For each no-show
+        Overstay -> DB : Update status -> "no_show"\n+ Create BookingHistory (status="no_show")
+        Overstay -> Score : Recalculate client penalty
+        Score -> Score : penalty += noShows x 0.7
+        Score --> Overstay : Updated score
+    end
+end
+
+@enduml

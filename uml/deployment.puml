@@ -1,0 +1,54 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam componentStyle uml2
+skinparam nodeFontSize 11
+skinparam defaultTextAlignment center
+skinparam nodesep 40
+skinparam ranksep 35
+
+title Figure 3.9 - Deployment Diagram of RestroVibes Restaurant Appointment System
+
+node "Client Tier" <<Device>> {
+  node "Web Browser" <<Execution Environment>> {
+    [React SPA] as React
+    [Axios HTTP Client] as Axios
+  }
+}
+
+node "Server Tier" <<Server>> {
+  node "Node.js Runtime" <<Execution Environment>> {
+    [Express API Server] as Express
+    [JWT Auth Middleware] as Auth
+    [Background Workers\n(Overstay, Auto-Accept, Lottery)] as Workers
+    [Sequelize ORM] as Sequelize
+  }
+}
+
+node "Data Tier" <<Server>> {
+  node "Database Engine" <<Execution Environment>> {
+    database "PostgreSQL 14" as Postgres
+  }
+}
+
+cloud "External Services" {
+  [OpenStreetMap] as OSM
+  [Browser Geolocation API] as Geo
+}
+
+' Internal Component Flow
+React --> Axios
+Axios --> Express : HTTPS / REST\n(JWT Bearer)
+Express --> Auth : delegates
+Express --> Sequelize : delegates
+Sequelize --> Postgres : SQL (Port 5432)
+Workers --> Postgres : SQL (Port 5432)
+
+' External Service Connections
+React --> OSM : Map Tiles
+React --> Geo : GPS Location
+
+caption Figure 3.9: Deployment Diagram of RestroVibes Restaurant Appointment System
+@enduml

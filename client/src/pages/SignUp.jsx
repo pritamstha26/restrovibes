@@ -19,6 +19,7 @@ export default function SignupPage() {
     first_name: "",
     last_name: "",
     phone_number: "",
+    restaurant_name: "",
   });
   const navigate = useNavigate();
 
@@ -50,6 +51,12 @@ export default function SignupPage() {
       return;
     }
 
+    if (selectedRole === "restaurateurs" && !formData.restaurant_name.trim()) {
+      setError("Please enter the name of your restaurant.");
+      setValidated(true);
+      return;
+    }
+
     setValidated(true);
     setError(null);
 
@@ -57,6 +64,10 @@ export default function SignupPage() {
       ...formData,
       role: selectedRole,
       phone_number: formData.phone_number || null,
+      location_name:
+        selectedRole === "restaurateurs"
+          ? formData.restaurant_name || null
+          : null,
     };
 
     try {
@@ -117,6 +128,20 @@ export default function SignupPage() {
             </div>
 
             <Form className="auth-form" noValidate validated={validated} onSubmit={handleSubmit}>
+              {selectedRole === "restaurateurs" && (
+                <Form.Group className="mb-3" controlId="restaurantName">
+                  <Form.Label>Restaurant name</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="restaurant_name"
+                    placeholder="e.g. Himalayan Kitchen"
+                    value={formData.restaurant_name}
+                    onChange={handleChange}
+                    required
+                  />
+                </Form.Group>
+              )}
+
               <div className="row g-3">
                 <div className="col-6">
                   <Form.Group controlId="firstName">
@@ -185,7 +210,7 @@ export default function SignupPage() {
 
               <div className="mb-3 small text-muted">
                 {selectedRole === "restaurateurs"
-                  ? "You'll set your business location on first login."
+                  ? "Enter your restaurant name above; you'll set its location on first login."
                   : "Client accounts can book appointments immediately after signup."}
               </div>
 

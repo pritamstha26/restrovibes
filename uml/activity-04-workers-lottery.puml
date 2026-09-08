@@ -1,0 +1,143 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam activityFontSize 12
+skinparam arrowFontSize 10
+
+title RestroVibes - Background Workers & Lottery Resolution
+
+|Auto-Accept Worker|
+start
+:Wait 2 minutes;
+
+:Find pending appointments\nolder than 20 minutes;
+
+if (Any found?) then (no)
+    :No action;
+    stop
+else (yes)
+endif
+
+:Group by slot\n(restaurateur + date + hour);
+
+fork
+    :Process slot group 1;
+fork again
+    :Process slot group 2;
+fork again
+    :Process slot group N;
+end fork
+
+:For each slot group;
+
+if (Pending count = 1?) then (yes - no competition)
+    :Auto-accept appointment;
+    :Update status -> "accepted";
+    :Create BookingHistory\n(status = "completed");
+    :Notify restaurateur;
+else (no - 2+ pending)
+    :Skip - leave for lottery;
+endif
+
+:Next slot group;
+
+if (More slots?) then (yes)
+    :Process next slot;
+else (no)
+endif
+
+stop
+
+' ============================
+' LOTTERY SCHEDULER
+' ============================
+
+|Lottery Scheduler|
+start
+:Wait 60 seconds;
+
+:Find slots with 2+\npending lottery entries;
+
+if (Contested slots?) then (no)
+    :No action;
+    stop
+else (yes)
+endif
+
+:For each contested slot;
+
+:Fetch all lottery entries\nwith weights + timestamps;
+
+:Calculate entry ages\nfrom timestamp;
+
+:Apply half-life decay boost\n(older entries get advantage);
+
+:Normalize weights:\nadjustedWeight = weight x ageBoost;
+
+:Weighted random selection:\ncumsum += adjustedWeight\npick random threshold\nselect first where cumsum >= threshold;
+
+:Select winner + identify losers;
+
+|Database|
+:Update winner status -> "accepted";
+:Update losers status -> "cancelled";
+:Insert BookingHistory for winner;
+
+|Lottery Scheduler|
+:Notify restaurateur: booking confirmed;
+:Notify client: lottery result;
+
+:Next contested slot;
+
+if (More slots?) then (yes)
+    :Process next slot;
+else (no)
+endif
+
+stop
+
+' ============================
+' OVERSTAY WORKER
+' ============================
+
+|Overstay Worker|
+start
+:Wait 60 seconds;
+
+fork
+    :Find in_progress appointments\npast end_time + 10 min grace;
+
+    if (Overstayed found?) then (no)
+    else (yes)
+        :For each overstayed appointment;
+        :Update status -> "completed";
+        :Create BookingHistory\n(status = "overstayed");
+
+        |ScoringEngine|
+        :Recalculate client penalty;
+        :penalty += overstays x 0.15;
+
+        |Overstay Worker|
+        :Update user penalty fields;
+    endif
+
+fork again
+    :Find pending/accepted appointments\npast end_time + grace (never started);
+
+    if (No-shows found?) then (no)
+    else (yes)
+        :For each no-show;
+        :Update status -> "no_show";
+        :Create BookingHistory\n(status = "no_show");
+
+        |ScoringEngine|
+        :Recalculate client penalty;
+        :penalty += noShows x 0.7;
+
+        |Overstay Worker|
+        :Update user penalty fields;
+    endif
+end fork
+
+stop

@@ -41,6 +41,16 @@ const AppointmentModel = sequelize.define("AppointmentModel", {
      type: DataTypes.INTEGER,
      allowNull: false
    },
+  quantity: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 1,
+  },
+  booking_group_id: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: "Shared identifier grouping line items of a single multi-item booking",
+  },
   party_size: {
     type: DataTypes.INTEGER,
     allowNull: false,

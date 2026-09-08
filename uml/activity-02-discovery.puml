@@ -1,0 +1,83 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam activityFontSize 12
+skinparam arrowFontSize 10
+
+title RestroVibes - Restaurant Discovery & GPS Navigation
+
+|Client|
+start
+:Open nearby restaurants page;
+
+:Request browser geolocation;
+if (Location granted?) then (no)
+    :Show location required message;
+    stop
+else (yes)
+endif
+
+:Get current position\n(latitude, longitude);
+
+|Web Interface|
+:Send GET /api/location/nearby-restaurateurs\n?latitude=X&longitude=Y;
+
+|LocationController|
+:Fetch all restaurateurs\nWHERE role = 'restaurateurs'\nAND active_status = true;
+
+if (Restaurateurs found?) then (no)
+    :Return empty list;
+    |Client|
+    :Show "No restaurants nearby";
+    stop
+else (yes)
+endif
+
+:For each restaurateur;
+
+fork
+    :Calculate Haversine distance\nfrom client to restaurant;
+fork again
+    :Calculate ETA\n(distance / 30 km/h x 3600);
+fork again
+    :Count active appointments today\n(status: pending, accepted, in_progress);
+fork again
+    :Calculate occupancy rate\n= min(active / capacity, 1);
+end fork
+
+:Calculate seats remaining\n= max(capacity - active, 0);
+
+:Sort by distance ascending;
+:Filter by max distance;
+
+|Web Interface|
+:Receive restaurant list with data;
+
+:Initialize Leaflet map\n(centered on client position);
+
+:For each restaurant;
+    :Add marker on map\nwith popup info\n(name, distance, occupancy);
+
+:Display interactive map;
+
+|Client|
+:Browse restaurants on map;
+:Click restaurant marker;
+
+|Web Interface|
+:Send GET /api/appointments/restaurateurs/:id;
+
+|AppointmentController|
+:Fetch restaurant profile;
+:Fetch services offered;
+:Fetch today's appointments;
+
+|Web Interface|
+:Render restaurant profile page;
+:Show services, tables, available slots;
+
+|Client|
+:View restaurant details;
+
+stop

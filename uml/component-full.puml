@@ -1,0 +1,255 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam componentFontSize 10
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam nodesep 30
+skinparam ranksep 30
+skinparam packageFontSize 11
+skinparam packageStyle rectangle
+skinparam noteFontSize 9
+skinparam arrowFontSize 9
+
+title RestroVibes - Complete System Component Diagram
+
+' ============================================================
+' CLIENT TIER
+' ============================================================
+package "Client Tier (React SPA - Vite :5173)" as clientTier {
+
+    package "Routing" as routing {
+        [React Router] as router
+        [Protected Routes\n(JWT Guard)] as protR
+    }
+
+    package "Client Portal" as cp {
+        [Dashboard] as cDash
+        [Nearby Restaurants\n(Leaflet Map)] as nearby
+        [Restaurant Profile] as rProfile
+        [Booking Form] as bookForm
+        [GPS Navigation] as gpsNav
+        [Settings] as cSett
+    }
+
+    package "Restaurateur Portal" as rp {
+        [Dashboard Tabs] as rDash
+        [Appointments Tab] as apptTab
+        [Services Tab] as svcTab
+        [Tables Tab] as tableTab
+        [Client History\n(Risk Popover)] as histTab
+    }
+
+    package "Admin Panel" as ap {
+        [Admin Dashboard] as aDash
+        [User Management] as aUser
+        [Booking Overview] as aBook
+    }
+
+    package "Shared" as shared {
+        [StarRating] as star
+        [ErrorBoundary] as errBound
+    }
+
+    package "API Layer" as apiLayer {
+        [Axios Instance\n(baseURL :5000)] as axios
+        [Request Interceptor\n(JWT Injection)] as reqInt
+        [Response Interceptor\n(401 Refresh)] as resInt
+    }
+
+    package "Hooks" as hooks {
+        [usePolling\n(5s refresh)] as poll
+        [useLottery] as uLottery
+    }
+
+    package "Utilities" as cUtils {
+        [Dynamic Pricing\n(Surge Calc)] as dynP
+        [Route Algorithms] as routeA
+        [Geocode] as geocode
+    }
+}
+
+' ============================================================
+' SERVER TIER
+' ============================================================
+package "Server Tier (Express :5000)" as serverTier {
+
+    package "Route Layer" as routes {
+        [authRoutes] as aR
+        [appointmentRoutes] as apR
+        [locationRoutes] as lR
+        [tableRoutes] as tR
+        [serviceRoutes] as sR
+        [ratingRoutes] as raR
+        [lotteryRoutes] as loR
+        [uploadRoutes] as uR
+        [userRoutes] as usR
+    }
+
+    package "Middleware" as mw {
+        [authenticateToken\n(JWT Verify)] as authMw
+        [Multer\n(File Upload)] as mulMw
+    }
+
+    package "Controller Layer" as ctrl {
+        [AuthController] as aCtrl
+        [AppointmentController] as apCtrl
+        [LocationController] as lCtrl
+        [TableController] as tCtrl
+        [ServiceController] as sCtrl
+        [RatingController] as raCtrl
+        [UserController] as usCtrl
+        [UploadController] as uCtrl
+    }
+
+    package "Background Workers" as workers {
+        [Overstay Worker\n(60s)] as ow
+        [Auto-Accept Worker\n(2min)] as aaw
+        [Lottery Scheduler\n(60s)] as lsw
+    }
+
+    package "Engine & Utilities" as engine {
+        [ScoringEngine\n(Penalty Calc)] as score
+        [WeightedLottery\n(Selection)] as wLottery
+        [Haversine\n(Distance)] as haversine
+        [JWT Utilities] as jwtU
+        [Bcrypt Hasher] as bcrypt
+        [Nodemailer\n(Email)] as nodemail
+    }
+
+    package "Model Layer (Sequelize)" as models {
+        [UsersModel] as uMod
+        [AppointmentModels] as apMod
+        [BookingHistoryModels] as bhMod
+        [LotteryPoolModels] as lpMod
+        [RestaurateurServices] as rsMod
+        [TablesModel] as tMod
+        [RatingsModel] as raMod
+    }
+}
+
+' ============================================================
+' DATA & EXTERNAL TIER
+' ============================================================
+database "PostgreSQL 14\n(:5433)" as db
+storage "File System\n(uploads/)" as fs
+queue "Email Service\n(SMTP)" as email
+cloud "External" as ext {
+    [OpenStreetMap] as osm
+    [Geolocation API] as geoApi
+}
+
+' ============================================================
+' CLIENT INTERNAL CONNECTIONS
+' ============================================================
+router ..> protR
+protR ..> cDash
+protR ..> nearby
+protR ..> rProfile
+protR ..> bookForm
+protR ..> rDash
+protR ..> aDash
+
+nearby ..> axios
+bookForm ..> axios
+apptTab ..> axios
+svcTab ..> axios
+tableTab ..> axios
+aUser ..> axios
+aBook ..> axios
+aDash ..> axios
+
+nearby ..> poll
+apptTab ..> poll
+
+nearby ..> dynP
+bookForm ..> dynP
+gpsNav ..> routeA
+nearby ..> geocode
+
+nearby ..> osm
+gpsNav ..> geoApi
+
+' ============================================================
+' CLIENT -> SERVER CONNECTIONS
+' ============================================================
+axios -down-> aR : HTTP/REST\nAuthorization: Bearer
+axios -down-> apR
+axios -down-> lR
+axios -down-> tR
+axios -down-> sR
+axios -down-> raR
+axios -down-> loR
+axios -down-> uR
+axios -down-> usR
+
+' ============================================================
+' SERVER INTERNAL CONNECTIONS
+' ============================================================
+
+' Routes -> Middleware
+aR ..> authMw
+apR ..> authMw
+lR ..> authMw
+tR ..> authMw
+sR ..> authMw
+raR ..> authMw
+loR ..> authMw
+usR ..> authMw
+uR ..> mulMw
+
+' Routes -> Controllers
+aR -down-> aCtrl
+apR -down-> apCtrl
+lR -down-> lCtrl
+tR -down-> tCtrl
+sR -down-> sCtrl
+raR -down-> raCtrl
+loR -down-> apCtrl
+uR -down-> uCtrl
+usR -down-> usCtrl
+
+' Controllers -> Models
+aCtrl -down-> uMod
+apCtrl -down-> apMod
+apCtrl -down-> bhMod
+lCtrl -down-> uMod
+tCtrl -down-> tMod
+sCtrl -down-> rsMod
+raCtrl -down-> raMod
+usCtrl -down-> uMod
+uCtrl -down-> tMod
+
+' Controllers -> Engine
+aCtrl ..> jwtU
+aCtrl ..> bcrypt
+aCtrl ..> nodemail
+apCtrl ..> score
+lCtrl ..> haversine
+raCtrl ..> score
+
+' Workers -> Models + Engine
+ow -down-> apMod
+ow -down-> bhMod
+ow ..> score
+aaw -down-> apMod
+lsw -down-> lpMod
+lsw -down-> apMod
+lsw ..> wLottery
+
+' Models -> Database
+uMod -down-> db
+apMod -down-> db
+bhMod -down-> db
+lpMod -down-> db
+rsMod -down-> db
+tMod -down-> db
+raMod -down-> db
+
+' Upload -> File System
+uCtrl -right-> fs
+
+' Email
+nodemail -right-> email
+
+@enduml

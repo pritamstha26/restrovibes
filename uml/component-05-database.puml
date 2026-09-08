@@ -1,0 +1,143 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam componentFontSize 10
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam nodesep 40
+skinparam ranksep 35
+
+title RestroVibes - Database Entity Relationships
+
+entity "UsersModel" as users {
+    * id : INTEGER <<PK>>
+    --
+    first_name : STRING
+    last_name : STRING
+    email : STRING
+    password : STRING (bcrypt)
+    phone : STRING
+    role : ENUM(client, restaurateurs, admin)
+    --
+    latitude : FLOAT
+    longitude : FLOAT
+    location_name : STRING
+    seat_capacity : INTEGER
+    opening_time : TIME
+    closing_time : TIME
+    --
+    penalty_score : FLOAT
+    reliability_status : ENUM(reliable, at_risk, flagged)
+    is_flagged : BOOLEAN
+    total_no_shows : INTEGER
+    total_late_cancellations : INTEGER
+    total_late_arrivals : INTEGER
+    total_completed_bookings : INTEGER
+    --
+    reset_token : TEXT
+    reset_token_expiry : DATE
+    refresh_token : TEXT
+    active_status : BOOLEAN
+}
+
+entity "AppointmentModels" as appointments {
+    * id : INTEGER <<PK>>
+    --
+    clientId : INTEGER <<FK>>
+    restaurateurId : INTEGER <<FK>>
+    service_id : INTEGER <<FK>>
+    --
+    date : DATE
+    start_time : TIME
+    end_time : TIME
+    --
+    party_size : INTEGER
+    table_id : INTEGER <<FK>>
+    booking_group_id : UUID
+    --
+    status : ENUM(pending, accepted, in_progress,\ncompleted, cancelled, no_show)
+    booked_price : INTEGER
+    --
+    extended_until : DATE
+    extension_status : ENUM(none, pending, accepted, rejected)
+    is_late : BOOLEAN
+    actual_arrival_time : TIMESTAMP
+    --
+    created_at : TIMESTAMP
+    updated_at : TIMESTAMP
+}
+
+entity "BookingHistoryModels" as history {
+    * id : INTEGER <<PK>>
+    --
+    clientId : INTEGER <<FK>>
+    appointmentId : INTEGER <<FK>>
+    --
+    status : ENUM(completed, no_show, late_arrival,\nlate_cancelled, overstayed)
+    --
+    created_at : TIMESTAMP
+}
+
+entity "LotteryPoolModels" as lottery {
+    * id : INTEGER <<PK>>
+    --
+    appointmentId : INTEGER <<FK>>
+    weight : FLOAT
+    status : ENUM(pending, won, lost)
+    --
+    created_at : TIMESTAMP
+    resolved_at : TIMESTAMP
+}
+
+entity "RestaurateurServices" as services {
+    * id : INTEGER <<PK>>
+    --
+    name : STRING
+    price : INTEGER
+    duration : INTEGER
+    restaurateurId : INTEGER <<FK>>
+    --
+    unique(restaurateurId, name)
+}
+
+entity "Tables" as tables {
+    * id : INTEGER <<PK>>
+    --
+    restaurateur_id : INTEGER <<FK>>
+    table_number : STRING
+    capacity : INTEGER
+    is_active : BOOLEAN
+    images : JSON (array of paths)
+    --
+    unique(restaurateur_id, table_number)
+}
+
+entity "Ratings" as ratings {
+    * id : INTEGER <<PK>>
+    --
+    appointmentId : INTEGER <<FK>>
+    clientId : INTEGER <<FK>>
+    targetId : INTEGER <<FK>>
+    targetType : ENUM(client, restaurateur)
+    score : INTEGER (1-5)
+    comment : TEXT
+    --
+    unique(appointmentId, clientId, targetType)
+}
+
+' === Relationships ===
+
+users ||--o{ appointments : "client books"
+users ||--o{ appointments : "restaurateur manages"
+users ||--o{ history : "client history"
+users ||--o{ services : "offers services"
+users ||--o{ tables : "owns tables"
+users ||--o{ ratings : "gives ratings"
+users ||--o{ ratings : "receives ratings"
+
+appointments ||--o{ history : "creates history"
+appointments ||--o| lottery : "enters lottery"
+appointments ||--o| ratings : "generates ratings"
+appointments }o--|| tables : "optional table"
+
+@enduml

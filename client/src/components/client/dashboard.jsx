@@ -487,6 +487,7 @@ import {
 } from "react-icons/fa";
 import api from "../../apis/api";
 import { jwtDecode } from "jwt-decode";
+import { usePolling } from "../../hooks/usePolling";
 import { useNavigate } from "react-router-dom";
 import "./dashboard.css";
 
@@ -550,9 +551,9 @@ const Dashboard = () => {
     setTimeout(() => setShowAlert(false), 5000);
   };
 
-  const fetchAppointments = async () => {
+  const fetchAppointments = async (silent = false) => {
     try {
-      setIsLoading(true);
+      if (!silent) setIsLoading(true);
       const token = sessionStorage.getItem("access_token");
       if (!token) return;
 
@@ -607,35 +608,47 @@ const Dashboard = () => {
       showAlertMessage("System failure fetching logs.", "danger");
       console.error("Error fetching appointments:", error);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
-  const handleCancelAppointment = async (appointmentId) => {
+  const handleCancelAppointment = async (appointment) => {
     try {
-      if (!window.confirm("Are you sure you want to cancel this appointment?")) {
+      const ids = (appointment.items && appointment.items.length
+        ? appointment.items.map((i) => i.id)
+        : [appointment.id]).filter(Boolean);
+      if (ids.length === 0) return;
+
+      const count = ids.length > 1 ? ` ${ids.length} line items` : "";
+      if (!window.confirm(`Are you sure you want to cancel this booking${count}?`)) {
         return;
       }
 
       setIsLoading(true);
       const token = sessionStorage.getItem("access_token");
 
-      const response = await api.put(
-        `/appointments/${appointmentId}/cancel`,
-        {},
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
+      let cancelled = 0;
+      for (const id of ids) {
+        const response = await api.put(
+          `/appointments/${id}/cancel`,
+          {},
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
           },
-        },
-      );
-
-      if (response.status === 200) {
-        showAlertMessage("Appointment cancelled successfully!", "warning");
-        await fetchAppointments();
-      } else {
-        showAlertMessage("Failed to cancel appointment", "danger");
+        );
+        if (response.status === 200) cancelled++;
       }
+
+      if (cancelled === ids.length) {
+        showAlertMessage("Booking cancelled successfully!", "warning");
+      } else if (cancelled > 0) {
+        showAlertMessage("Partially cancelled the booking", "warning");
+      } else {
+        showAlertMessage("Failed to cancel booking", "danger");
+      }
+      await fetchAppointments();
     } catch (error) {
       console.error("Error cancelling appointment:", error);
       showAlertMessage(`Error: ${error.response?.data?.message || error.message}`, "danger");
@@ -648,6 +661,8 @@ const Dashboard = () => {
     fetchServiceRequests();
     fetchAppointments();
   }, []);
+
+  usePolling(() => fetchAppointments(true), 5000);
 
   return (
     <div className="v-dashboard-root">
@@ -728,7 +743,11 @@ const Dashboard = () => {
                       <div className="text-muted small font-monospace" style={{ fontSize: "0.7rem" }}>
                         SERVICE
                       </div>
-                      <div className="font-medium">{upcoming.service_name}</div>
+                      <div className="font-medium">
+                        {(upcoming.items && upcoming.items.length
+                          ? upcoming.items.map((it) => `${it.service_name}${Number(it.quantity) > 1 ? ` × ${it.quantity}` : ""}`).join(", ")
+                          : upcoming.service_name) || "Unknown Service"}
+                      </div>
                     </div>
                     <div>
                       <div className="text-muted small font-monospace" style={{ fontSize: "0.7rem" }}>
@@ -788,10 +807,23 @@ const Dashboard = () => {
                   </thead>
                   <tbody>
                     {appointments.map((app) => {
+                      const items = (app.items && app.items.length ? app.items : [app]);
                       const canCancel = app.status !== "cancelled" && app.status !== "completed" && app.status !== "no_show";
+                      const primaryId = app.primary_id || app.id || items[0]?.id;
+                      const grandTotal =
+                        app.grand_total != null
+                          ? Number(app.grand_total)
+                          : items.reduce((sum, it) => sum + Number(it.booked_price ?? it.price ?? 0), 0);
                       return (
-                        <tr key={app.id} style={{ cursor: "pointer" }} onClick={() => navigate(`/appointments/${app.id}`)}>
-                          <td className="v-cell-main">{app.service_name}</td>
+                        <tr key={primaryId} style={{ cursor: "pointer" }} onClick={() => navigate(`/appointments/${primaryId}`)}>
+                          <td className="v-cell-main">
+                            {items.map((it) => (
+                              <div key={it.id} className="v-service-line">
+                                <span>{it.service_name || "Unknown Service"}</span>
+                                <span className="v-service-qty">× {it.quantity}</span>
+                              </div>
+                            ))}
+                          </td>
                           <td>
                             <div className="v-cell-main">{app.restaurateur_name || "Unassigned Provider"}</div>
                             {app.restaurateur_location && (
@@ -809,8 +841,15 @@ const Dashboard = () => {
                               hour12: false
                             })}
                           </td>
-                          <td>{app.duration}m</td>
-                          <td className="v-cell-mono fw-medium">NPR {app.price}</td>
+                          <td>{items[0]?.duration || app.duration}m</td>
+                          <td className="v-cell-mono fw-medium">
+                            <div>NPR {grandTotal.toLocaleString()}</div>
+                            {items.length > 1 && (
+                              <div className="text-muted font-monospace lh-1 mt-1" style={{ fontSize: "0.68rem" }}>
+                                {items.length} items
+                              </div>
+                            )}
+                          </td>
                           <td>
                             <span className={`v-status-flag v-status-flag-${app.status}`}>
                               {app.status.replace(/_/g, " ")}
@@ -821,7 +860,7 @@ const Dashboard = () => {
                               <button
                                 className="v-btn-geist"
                                 style={{ fontSize: "0.75rem", padding: "0.35rem 0.75rem" }}
-                                onClick={() => handleCancelAppointment(app.id)}
+                                onClick={() => handleCancelAppointment(app)}
                               >
                                 Cancel
                               </button>

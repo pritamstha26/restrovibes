@@ -1,0 +1,77 @@
+@startuml
+' RestroVibes — High-Level Sequence Diagram
+' Render: plantuml sequence-diagram-highlevel.puml
+
+title RestroVibes — High-Level System Sequence
+
+actor Client as CL
+actor Restaurateur as RE
+actor Admin as AD
+participant "System" as SYS
+database DB as DB
+
+' ================= AUTHENTICATION =================
+group Authentication
+  CL -> SYS : Login with credentials
+  SYS -> DB : Verify user
+  SYS --> CL : JWT issued
+  SYS --> CL : Role determined (client / restaurateur / admin)
+end
+
+' ================= BOOKING =================
+group Booking
+  CL -> SYS : Submit booking (restaurant, slot, party size)
+  SYS -> DB : Check availability
+  alt Available
+    SYS -> DB : Create appointment (pending)
+    alt Contested slot
+      SYS -> DB : Enter lottery pool (weighted)
+    end
+    SYS --> CL : Booking requested
+  else Full
+    SYS --> CL : Capacity full
+  end
+end
+
+' ================= DECISION =================
+group Decision
+  RE -> SYS : Accept / decline booking
+  SYS --> CL : Approval status
+  alt Lottery slot
+    SYS -> DB : Pick winner, others cancel
+  end
+end
+
+' ================= DINING =================
+group Dining
+  CL -> RE : Arrives
+  RE -> SYS : Mark arrived
+  SYS -> DB : Check-in (flagged if late)
+  RE -> SYS : Complete service
+  SYS -> DB : Booking completed + history
+end
+
+' ================= NO-SHOW =================
+group No-Show
+  RE -> SYS : Mark no-show
+  SYS -> DB : Record no-show + penalty
+  alt Penalty threshold exceeded
+    SYS -> DB : Flag account for admin review
+  end
+end
+
+' ================= RATING =================
+group Rating
+  CL -> SYS : Rate restaurateur (1-5)
+  RE -> SYS : Rate client (1-5)
+  SYS -> DB : Save rating
+end
+
+' ================= ADMIN =================
+group Administration
+  AD -> SYS : View bookings / reports
+  AD -> SYS : Review flagged accounts
+  SYS -> DB : Enable / disable users
+end
+
+@enduml

@@ -1,0 +1,211 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam activityFontSize 12
+skinparam arrowFontSize 10
+
+title RestroVibes - User Registration & Authentication
+
+|Client|
+start
+:Open sign-up page;
+:Fill registration form\n(name, email, password, phone);
+:Select role\n(Client / Restaurateur);
+
+|Web Interface|
+:Send POST /api/auth/register;
+
+|AuthController|
+:Validate input fields;
+if (Valid?) then (no)
+    :Return 400 error;
+    |Client|
+    :Fix errors and resubmit;
+    stop
+else (yes)
+endif
+
+:Check allowed roles\n["client", "restaurateurs"];
+if (Role allowed?) then (no)
+    :Return 403 Forbidden;
+    stop
+else (yes)
+endif
+
+:Hash password with bcrypt\n(10 rounds);
+:Create user in database;
+
+if (User created?) then (no)
+    :Return 409 Conflict;
+    stop
+else (yes)
+endif
+
+:Generate JWT access token (1h);
+:Generate refresh token (7d);
+:Store refresh token in DB;
+
+|Web Interface|
+:Store tokens in sessionStorage;
+:Redirect to role-specific dashboard;
+
+|Client|
+:View dashboard;
+
+stop
+
+' ============================
+' LOGIN FLOW
+' ============================
+
+|Client|
+start
+:Open login page;
+:Enter email + password;
+:Select role;
+
+|Web Interface|
+:Send POST /api/auth/login;
+
+|AuthController|
+:Find user by email + role;
+if (User exists?) then (no)
+    :Return 401 Invalid credentials;
+    stop
+else (yes)
+endif
+
+:Compare password (bcrypt);
+if (Password valid?) then (no)
+    :Return 401 Invalid credentials;
+    stop
+else (yes)
+endif
+
+:Generate JWT access token (1h);
+:Generate refresh token (7d);
+:Store refresh token in DB;
+
+|Web Interface|
+:Store tokens in sessionStorage;
+:Redirect to dashboard;
+
+|Client|
+:Access protected resources;
+
+stop
+
+' ============================
+' TOKEN REFRESH FLOW
+' ============================
+
+|Client|
+start
+:Make authenticated request;
+
+|Web Interface|
+:Send request with Bearer token;
+
+|AuthController|
+:Verify JWT signature;
+if (Token valid?) then (yes)
+    :Process request;
+    :Return 200 { data };
+    stop
+else (expired - 401)
+endif
+
+:Return 401 Unauthorized;
+
+|Web Interface|
+:Axios interceptor catches 401;
+:Send POST /api/auth/refresh-token\nwith refresh token;
+
+|AuthController|
+:Validate refresh token in DB;
+if (Refresh token valid?) then (no)
+    :Return 401 - re-login required;
+    stop
+else (yes)
+endif
+
+:Generate new token pair;
+:Update refresh token in DB;
+
+|Web Interface|
+:Update sessionStorage;
+:Retry original request;
+
+|AuthController|
+:Process with new token;
+:Return 200 { data };
+
+|Client|
+:Receive data;
+
+stop
+
+' ============================
+' PASSWORD RESET FLOW
+' ============================
+
+|Client|
+start
+:Open forgot password page;
+:Enter email address;
+
+|Web Interface|
+:Send POST /api/auth/forgot-password;
+
+|AuthController|
+:Rate limit check\n(60s cooldown per email);
+if (Rate limited?) then (yes)
+    :Return 429 Too Many Requests;
+    stop
+else (no)
+endif
+
+:Find user by email;
+:Generate crypto token\n(randomBytes(32));
+:Set expiry: now + 10 minutes;
+:Store token + expiry in DB;
+
+:Send reset email via Nodemailer;
+note right
+  Dev mode: log to console
+  Prod mode: SMTP email
+end note
+
+:Return 200 "If email exists, sent";
+note right : Prevents user enumeration
+
+|Client|
+:Receive email with reset link;
+:Click link -> reset page;
+:Enter new password;
+
+|Web Interface|
+:Send POST /api/auth/reset-password\n{ token, password };
+
+|AuthController|
+:Find user by token + non-expired;
+if (Token valid?) then (no)
+    :Return 400 "Invalid or expired";
+    stop
+else (yes)
+endif
+
+:Validate password >= 8 chars;
+:Hash new password (bcrypt);
+:Update password in DB;
+:Clear reset_token + expiry;
+
+|Web Interface|
+:Show success message;
+:Redirect to login;
+
+|Client|
+:Login with new password;
+
+stop

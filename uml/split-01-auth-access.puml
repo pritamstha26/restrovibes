@@ -1,0 +1,94 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 180
+
+title RestroVibes - Authentication & Access Control
+
+actor Client
+actor Restaurateur
+actor Admin
+
+participant "Web Interface" as Web
+participant "AuthController" as Auth
+participant "ScoringEngine" as Score
+participant "Database" as DB
+participant "EmailService" as Mail
+
+== Registration ==
+
+Client -> Web : Sign up\n(name, email, password, phone, role)
+Web -> Auth : POST /api/auth/register
+Auth -> Auth : Validate roles:\n["client", "restaurateurs"]
+Auth -> DB : Hash password (bcrypt)\n+ INSERT INTO users
+DB --> Auth : User created
+Auth -> Auth : Generate JWT access (1h)\n+ refresh token (7d)
+Auth --> Web : 201 { user, tokens }
+Web -> Web : Store in sessionStorage
+
+== Login ==
+
+Client -> Web : Enter email + password + role
+Web -> Auth : POST /api/auth/login
+Auth -> DB : SELECT WHERE email AND role
+DB --> Auth : User found
+Auth -> Auth : bcrypt.compare()
+Auth -> Auth : Generate JWT pair
+Auth --> Web : { accessToken, refreshToken }
+Web -> Web : Store tokens + redirect
+
+== Token Refresh ==
+
+Web -> Auth : Request fails -> 401
+Web -> Auth : POST /api/auth/refresh-token
+Auth -> DB : Validate refresh token
+DB --> Auth : Valid
+Auth -> Auth : Generate new tokens
+Auth -> DB : Update refresh token
+Auth --> Web : { new tokens }
+Web -> Web : Update storage + retry
+
+== Password Reset ==
+
+Client -> Web : Enter email
+Web -> Auth : POST /api/auth/forgot-password
+Auth -> DB : Find user by email
+Auth -> Auth : crypto.randomBytes(32)\nExpiry: now + 10 min
+Auth -> DB : Store reset_token + expiry
+Auth -> Mail : Send reset email
+Mail --> Client : Reset link sent
+note right of Mail : Dev: log to console\nProd: SMTP
+Auth --> Web : 200 (prevents enumeration)
+
+Client -> Web : Click link -> new password
+Web -> Auth : POST /api/auth/reset-password\n{ token, password }
+Auth -> DB : Validate token + expiry
+DB --> Auth : Valid
+Auth -> Auth : Hash new password
+Auth -> DB : Update password\n+ clear reset token
+Auth --> Web : 200 Reset successful
+
+== Role-Based Enforcement ==
+
+note over Web,DB
+Client:
+  + Create/cancel own appointments
+  + Extend own appointments
+  + View own history + rate
+
+Restaurateur:
+  + Confirm/complete/cancel own bookings
+  + Mark arrival + no-show
+  + Manage own tables + services
+
+Admin:
+  + Bypass all ownership checks
+  + Delete users + backfill penalties
+  + Manual lottery resolution
+end note
+
+@enduml

@@ -1,0 +1,95 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam activityFontSize 12
+skinparam arrowFontSize 10
+
+title RestroVibes - Appointment Booking Process
+
+|Client|
+start
+:Browse restaurant services;
+:View dynamic pricing;
+
+:Select service;
+:Choose date and time;
+:Enter party size;
+:Optionally select table;
+
+|Web Interface|
+:Send POST /api/appointments/\n{ service_id, date, party_size,\ntable_id?, items[] };
+
+|AppointmentController|
+:Validate future date;
+
+if (Future date?) then (no)
+    :Return 400 "Past date not allowed";
+    |Client|
+    :Fix date and resubmit;
+    stop
+else (yes)
+endif
+
+:Validate within opening/closing hours;
+
+if (Within hours?) then (no)
+    :Return 400 "Outside business hours";
+    stop
+else (yes)
+endif
+
+:Validate 1-hour gap rule\n(no same-restaurateur booking within 1hr);
+
+if (Gap satisfied?) then (no)
+    :Return 409 "Too close to existing booking";
+    stop
+else (yes)
+endif
+
+if (Table selected?) then (yes)
+    :Check table belongs to restaurateur;
+    :Verify party_size <= table.capacity;
+    :Check table availability\n(overlap query on [date, end_time));
+    if (Table available?) then (no)
+        :Return 409 "Table not available";
+        stop
+    else (yes)
+    endif
+endif
+
+:Check seat capacity:\nparty_size + activeOccupancy <= capacity;
+
+if (Capacity OK?) then (no)
+    :Return 409 "Not enough seats";
+    stop
+else (yes)
+endif
+
+:Calculate client reliability weight;
+
+|ScoringEngine|
+:Fetch BookingHistory for client;
+:Calculate weight =\nBASE(100) + (flexibility x 50)\n+ (loyalty x 30) - (penalty x 200);
+
+|AppointmentController|
+:Create appointment\n(status = "pending");
+:Insert lottery pool entry;
+
+|Database|
+:Store appointment + lottery entry;
+
+|Web Interface|
+:Return 201 { appointment, status: "pending" };
+
+|Client|
+:Receive booking confirmation\n(status: pending - in lottery);
+
+note right
+  Background workers now
+  handle the rest:
+  - Auto-Accept (2 min)
+  - Lottery Scheduler (60s)
+end note
+
+stop

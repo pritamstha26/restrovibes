@@ -1,0 +1,69 @@
+@startuml RestroVibes - Dynamic Pricing
+!theme plain
+title RestroVibes - Dynamic Pricing & Surge Calculation
+
+actor Client
+participant "Frontend\n(React SPA)" as FE
+participant "Browser\nGeolocation" as Geo
+participant "Express API" as API
+participant "PostgreSQL" as DB
+participant "Dynamic Pricing\nCalculation" as DP
+
+== DISCOVER RESTAURANT & PRICING ==
+
+Client -> FE : View nearby restaurant
+FE -> Geo : navigator.geolocation.getCurrentPosition()
+Geo --> FE : { latitude: 27.7172, longitude: 85.3240 }
+
+FE -> API : GET /api/location/nearby-restaurateurs\n?latitude=27.7172&longitude=85.3240
+API -> DB : Fetch all restaurateurs with locations
+DB --> API : Restaurateur list
+API -> API : Haversine distance from client\nto each restaurant
+API -> API : Calculate occupancy rate\n(active seats / total capacity)
+API --> FE : [{ restaurant, distance: 3.2 km,\noccupancyRate: 0.75, seatsRemaining: 5 }]
+
+FE -> API : GET /api/restaurateurs-services/all\n?dynamic=true&restaurateurId=15
+API -> DB : Fetch services + active appointments\n+ seat capacity for restaurateur
+DB --> API : Services + demand info
+API --> FE : [{ service, demandInfo:\n{ activeAppointments: 15,\ntotalCapacity: 20 }}]
+
+== CLIENT-SIDE PRICE CALCULATION ==
+
+FE -> DP : calculateDynamicPrice({\nbasePrice: 800,\ndistanceKm: 3.2,\npeakHour: true })
+
+DP -> DP : 1. Distance fee = 3.2 x 1.5 = 4.8
+DP -> DP : 2. Zone classification:\n  distance <= 3 km -> "Local" (surcharge: 0)\n  3 < distance <= 8 km -> "Mid-range" (+6)\n  distance > 8 km -> "Long-range" (+12)\n  => zone = "Mid-range", surcharge = +6
+DP -> DP : 3. Peak hour check:\n  peakHour = true -> +8
+DP -> DP : 4. Total = basePrice(800)\n  + distanceFee(4.8)\n  + zoneSurcharge(6)\n  + peakSurcharge(8)\n  = 818.8
+
+DP --> FE : {\n  total: 818.8,\n  distanceFee: 4.8,\n  zone: "Mid-range",\n  zoneSurcharge: 6,\n  peakSurcharge: 8\n}
+
+FE -> FE : Display price breakdown modal\nwith transparent breakdown
+
+== PRICING BREAKDOWN DISPLAY ==
+
+note over FE : Price Breakdown:\n  Base Price:      Rs. 800.00\n  Distance (3.2km): Rs. 4.80\n  Zone (Mid-range): Rs. 6.00\n  Peak Hour:       Rs. 8.00\n  ─────────────────\n  Total:           Rs. 818.80
+
+== BOOKING WITH CALCULATED PRICE ==
+
+Client -> FE : Confirm booking
+FE -> API : POST /api/appointments/\n{ service_id, date, party_size,\nitems: [{ quantity: 2 }] }
+API -> DB : Check availability + capacity
+API -> API : Calculate booked_price:\n  svc.price x quantity\n  (base price, not dynamic)
+API -> DB : Store appointment\n(booked_price = base x qty)
+API --> FE : 201 { appointment }
+
+note over API,DB : Server stores base price x quantity\nDynamic pricing is display-only\nServer does not enforce surge pricing
+
+== SLOT OCCUPANCY DATA (Server-Side) ==
+
+FE -> API : GET /api/appointments/check-slotted-pricing\n?restaurateurId=15&serviceId=3&date=2026-09-03
+API -> DB : Fetch service (price, duration)\n+ seat_capacity
+API -> API : Iterate SLOT_DEFINITIONS:\nMorning, Afternoon, Evening, Night
+loop For each time slot
+    API -> DB : Count active appointments in slot
+    API -> API : capacityRemaining = total - occupied\nisAvailable = capacityRemaining > 0
+end
+API --> FE : [{\n  id: "slot-1",\n  time: "12:00 PM",\n  period: "Afternoon",\n  price: 800,\n  activeAppointments: 12,\n  capacityRemaining: 8,\n  isAvailable: true\n}]
+
+@enduml

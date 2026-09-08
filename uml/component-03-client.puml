@@ -1,0 +1,155 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam componentFontSize 10
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam nodesep 40
+skinparam ranksep 40
+
+title RestroVibes - Client-Side Component Diagram
+
+package "React SPA (Vite)" {
+
+    package "Page Components" as pages {
+        [Login Page] as loginPg
+        [Sign Up Page] as signupPg
+        [Forgot Password] as forgotPg
+        [Reset Password] as resetPg
+        [Book Table Page] as bookPg
+        [Appointment Detail] as detailPg
+        [404 Not Found] as notFoundPg
+    }
+
+    package "Client Portal" as clientPortal {
+        [Client Dashboard] as clientDash
+        [Nearby Restaurants\n(Leaflet Map)] as nearbyPg
+        [Restaurant Profile] as restProfile
+        [Request Service\n(Booking Form)] as reqSvc
+        [GPS Navigation] as gpsNav
+        [Client Settings] as clientSettings
+        [Client Sidebar] as clientSidebar
+    }
+
+    package "Restaurateur Dashboard" as restPortal {
+        [Restaurateur Dashboard\n(Tab Layout)] as restDash
+        [Dashboard Tab\n(Stats Overview)] as dashTab
+        [Appointments Tab\n(Manage Bookings)] as apptTab
+        [Services Tab\n(Service CRUD)] as svcTab
+        [Tables Tab\n(Table CRUD)] as tableTab
+        [Client History Tab\n(Risk Assessment)] as histTab
+        [Settings Tab\n(Profile Settings)] as settTab
+        [ClientRiskPopover\n(Risk Badge)] as riskPop
+        [LocationSetup\n(GPS Modal)] as locSetup
+    }
+
+    package "Admin Panel" as adminPortal {
+        [Admin Dashboard] as adminDash
+        [Restaurant List] as adminRest
+        [Client List] as adminClient
+        [Bookings View] as adminBook
+        [Services Management] as adminSvc
+        [Tables Management] as adminTable
+    }
+
+    package "Shared Components" as shared {
+        [StarRating] as star
+        [ErrorBoundary] as errorBound
+        [UnauthorizedHandler] as unauth
+        [Logo] as logo
+    }
+
+    package "API Layer" as api {
+        [Axios Instance\n(baseURL: :5000)] as axiosInst
+        [Request Interceptor\n(JWT injection)] as reqIntercept
+        [Response Interceptor\n(401 refresh)] as resIntercept
+    }
+
+    package "State & Hooks" as hooks {
+        [usePolling\n(real-time refresh)] as polling
+        [useLottery\n(lottery state)] as lotteryHook
+    }
+
+    package "Utilities" as utils {
+        [Dynamic Pricing\n(surge calculation)] as dynPrice
+        [Route Algorithms\n(navigation)] as routeAlg
+        [Geocode\n(address lookup)] as geocode
+    }
+
+    package "Routing" as routing {
+        [React Router\n(route definitions)] as router
+        [Protected Routes\n(JWT guard)] as protectedR
+        [Admin Layout\n(panel layout)] as adminLayout
+    }
+}
+
+database "Express API\n(:5000)" as apiServer
+
+' API connections
+axiosInst -down-> apiServer : HTTP/REST
+reqIntercept ..> axiosInst
+resIntercept ..> axiosInst
+
+' Page -> Routing connections
+router ..> loginPg
+router ..> signupPg
+router ..> forgotPg
+router ..> resetPg
+router ..> bookPg
+router ..> detailPg
+router ..> notFoundPg
+router ..> clientDash
+router ..> nearbyPg
+router ..> restProfile
+router ..> reqSvc
+router ..> restDash
+router ..> adminDash
+
+' Client Portal internal
+clientDash ..> clientSidebar
+nearbyPg ..> clientSidebar
+restProfile ..> clientSidebar
+reqSvc ..> clientSidebar
+gpsNav ..> clientSidebar
+clientSettings ..> clientSidebar
+
+' Restaurateur internal
+restDash ..> dashTab
+restDash ..> apptTab
+restDash ..> svcTab
+restDash ..> tableTab
+restDash ..> histTab
+restDash ..> settTab
+histTab ..> riskPop
+restDash ..> locSetup
+
+' Admin internal
+adminDash ..> adminRest
+adminDash ..> adminClient
+adminDash ..> adminBook
+adminDash ..> adminSvc
+adminDash ..> adminTable
+
+' Pages -> API
+loginPg ..> axiosInst
+signupPg ..> axiosInst
+nearbyPg ..> axiosInst
+restProfile ..> axiosInst
+reqSvc ..> axiosInst
+apptTab ..> axiosInst
+svcTab ..> axiosInst
+tableTab ..> axiosInst
+adminRest ..> axiosInst
+adminClient ..> axiosInst
+
+' Pages -> Hooks
+apptTab ..> polling
+nearbyPg ..> polling
+
+' Pages -> Utils
+nearbyPg ..> dynPrice
+reqSvc ..> dynPrice
+gpsNav ..> routeAlg
+nearbyPg ..> geocode
+
+@enduml

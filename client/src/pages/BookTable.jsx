@@ -107,7 +107,7 @@ export default function BookTablePage() {
   const [tables, setTables] = useState([]);
   const [services, setServices] = useState([]);
   const [selectedTable, setSelectedTable] = useState(null);
-  const [selectedService, setSelectedService] = useState(null);
+  const [cart, setCart] = useState({});
   const [bookingDate, setBookingDate] = useState(
     new Date(Date.now() + 24 * 60 * 60 * 1000)
   );
@@ -192,17 +192,20 @@ export default function BookTablePage() {
       return;
     }
     const closeTime = restaurant?.closing_time || "18:00:00";
-    const duration = selectedService?.duration || 45;
+    const duration = Object.values(cart).reduce(
+      (max, item) => Math.max(max, item.service.duration || 45),
+      45,
+    );
     const mins = generateMinuteOptions(selectedHour, closeTime, duration);
     setMinuteOptions(mins);
 
     if (bookingTime && !mins.includes(bookingTime)) {
       setBookingTime(mins.length > 0 ? mins[0] : "");
     }
-  }, [selectedHour, restaurant, selectedService]);
+  }, [selectedHour, restaurant, cart]);
 
   useEffect(() => {
-    if (!selectedTable || !selectedService || !bookingTime) {
+    if (!selectedTable || Object.keys(cart).length === 0 || !bookingTime) {
       setSlotAvailable(null);
       return;
     }
@@ -215,11 +218,16 @@ export default function BookTablePage() {
         const dateObj = new Date(bookingDate);
         dateObj.setHours(hours, minutes, 0, 0);
 
+        const duration = Object.values(cart).reduce(
+          (max, item) => Math.max(max, item.service.duration || 45),
+          45,
+        );
+
         const params = new URLSearchParams({
           table_id: selectedTable.id,
           restaurateur_id: restaurantId,
           date: dateObj.toISOString(),
-          duration: String(selectedService.duration || 45),
+          duration: String(duration),
         });
 
         const res = await api.get(`/appointments/check-availability?${params}`);
@@ -239,10 +247,10 @@ export default function BookTablePage() {
 
     check();
     return () => { cancelled = true; };
-  }, [bookingDate, bookingTime, selectedTable, selectedService, restaurantId]);
+  }, [bookingDate, bookingTime, selectedTable, cart, restaurantId]);
 
   const handleBookTable = async () => {
-    if (!selectedTable || !restaurant || !selectedService) return;
+    if (!selectedTable || !restaurant || Object.keys(cart).length === 0) return;
     setBookingInProgress(true);
     setError(null);
 
@@ -258,10 +266,15 @@ export default function BookTablePage() {
       const appointmentDate = new Date(bookingDate);
       appointmentDate.setHours(hours, minutes, 0, 0);
 
+      const items = Object.values(cart).map((item) => ({
+        service_id: item.service.id,
+        quantity: item.quantity,
+      }));
+
       const response = await api.post(
         "/appointments",
         {
-          service_id: selectedService.id,
+          items,
           date: appointmentDate.toISOString(),
           restaurateurs_id: restaurant.id,
           party_size: partySize,
@@ -284,13 +297,48 @@ export default function BookTablePage() {
     }
   };
 
-  const totalPrice = selectedService ? selectedService.price * partySize : 0;
+  const cartItems = Object.values(cart);
+  const totalPrice = cartItems.reduce(
+    (sum, item) => sum + item.service.price * item.quantity,
+    0,
+  );
+  const addToCart = (service) =>
+    setCart((prev) => ({
+      ...prev,
+      [service.id]: {
+        service,
+        quantity: (prev[service.id]?.quantity || 0) + 1,
+      },
+    }));
+  const incrementItem = (id) =>
+    setCart((prev) => ({
+      ...prev,
+      [id]: { ...prev[id], quantity: prev[id].quantity + 1 },
+    }));
+  const decrementItem = (id) =>
+    setCart((prev) => {
+      const current = prev[id];
+      if (!current) return prev;
+      if (current.quantity <= 1) {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      }
+      return { ...prev, [id]: { ...current, quantity: current.quantity - 1 } };
+    });
+  const removeItem = (id) =>
+    setCart((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+
   const hasLocation =
     restaurant?.latitude != null && restaurant?.longitude != null;
   const canSubmit =
     hasLocation &&
     selectedTable &&
-    selectedService &&
+    cartItems.length > 0 &&
     partySize > 0 &&
     partySize <= (selectedTable?.capacity || 0) &&
     selectedTable?.is_active;
@@ -546,30 +594,62 @@ export default function BookTablePage() {
                 </div>
               ) : (
                 <div className="bk-services-grid">
-                  {services.map((service) => (
-                    <button
-                      key={service.id}
-                      className={`bk-service-card ${selectedService?.id === service.id ? "bk-service-card-active" : ""}`}
-                      onClick={() => setSelectedService(service)}
-                    >
-                      <div className="bk-service-top">
-                        <span className="bk-service-name">{service.name}</span>
-                        <span className="bk-service-price">
-                          Rs. {service.price}
-                        </span>
-                      </div>
-                      <div className="bk-service-bottom">
-                        <span className="bk-service-duration">
-                          <FaClock /> {service.duration} min
-                        </span>
-                        {selectedService?.id === service.id && (
-                          <span className="bk-service-check">
-                            <FaCheckCircle />
+                  {services.map((service) => {
+                    const inCart = cart[service.id];
+                    return (
+                      <div
+                        key={service.id}
+                        className={`bk-service-card${inCart ? " bk-service-card-active" : ""}`}
+                      >
+                        <div className="bk-service-top">
+                          <span className="bk-service-name">{service.name}</span>
+                          <span className="bk-service-price">
+                            Rs. {service.price}
                           </span>
-                        )}
+                        </div>
+                        <div className="bk-service-bottom">
+                          <span className="bk-service-duration">
+                            <FaClock /> {service.duration} min
+                          </span>
+                          {inCart ? (
+                            <span className="bk-cart-qty">
+                              <button
+                                type="button"
+                                className="bk-qty-btn"
+                                onClick={() => decrementItem(service.id)}
+                              >
+                                –
+                              </button>
+                              <span className="bk-qty-value">{inCart.quantity}</span>
+                              <button
+                                type="button"
+                                className="bk-qty-btn"
+                                onClick={() => incrementItem(service.id)}
+                              >
+                                +
+                              </button>
+                              <button
+                                type="button"
+                                className="bk-qty-remove"
+                                title="Remove item"
+                                onClick={() => removeItem(service.id)}
+                              >
+                                <FaTimes />
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="bk-add-btn"
+                              onClick={() => addToCart(service)}
+                            >
+                              <FaCheckCircle /> Add
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </button>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -664,21 +744,33 @@ export default function BookTablePage() {
 
               <div className="bk-summary-divider" />
 
-              {/* Selected Service */}
-              {selectedService ? (
-                <div className="bk-summary-row">
-                  <div className="bk-summary-label">Service</div>
-                  <div className="bk-summary-value bk-summary-service">
-                    <span>{selectedService.name}</span>
-                    <span className="bk-service-unit-price">
-                      Rs. {selectedService.price} x {partySize}
-                    </span>
-                  </div>
+              {/* Order Items */}
+              {cartItems.length > 0 ? (
+                <div className="bk-order-items">
+                  <div className="bk-summary-label mb-1">Your Order</div>
+                  {cartItems.map((item) => (
+                    <div className="bk-order-line" key={item.service.id}>
+                      <span className="bk-order-name">
+                        {item.service.name}
+                        <span className="bk-order-qty"> x {item.quantity}</span>
+                      </span>
+                      <span className="bk-order-price">
+                        Rs. {(item.service.price * item.quantity).toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="bk-order-clear"
+                    onClick={() => setCart({})}
+                  >
+                    Clear order
+                  </button>
                 </div>
               ) : (
                 <div className="bk-summary-empty">
                   <FaUtensils />
-                  <span>Choose a service</span>
+                  <span>Add items to your order</span>
                 </div>
               )}
 
@@ -731,8 +823,8 @@ export default function BookTablePage() {
                     ? "Restaurant location not set"
                     : !selectedTable
                       ? "Select a table to continue"
-                      : !selectedService
-                        ? "Choose a service"
+                      : cartItems.length === 0
+                        ? "Add items to your order"
                         : partySize > (selectedTable?.capacity || 0)
                           ? "Reduce party size"
                           : "Complete all fields"}
@@ -770,8 +862,8 @@ export default function BookTablePage() {
               <strong>{partySize}</strong>
             </div>
             <div className="bk-success-detail">
-              <span>Service</span>
-              <strong>{selectedService?.name}</strong>
+              <span>Items</span>
+              <strong>{cartItems.length}</strong>
             </div>
             <div className="bk-success-detail">
               <span>Total</span>

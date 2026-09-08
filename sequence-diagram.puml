@@ -1,0 +1,65 @@
+@startuml RestroVibes Authentication Flow
+!theme plain
+title RestroVibes - Authentication Flow
+
+actor Client
+actor Restaurateur
+participant "Frontend\n(React SPA)" as FE
+participant "Express API\n(:5000)" as API
+participant "Auth Middleware" as Auth
+participant "PostgreSQL" as DB
+participant "Nodemailer" as Mail
+
+== REGISTRATION ==
+
+Client -> FE : Fill sign-up form\n(name, email, password, phone, role)
+FE -> API : POST /api/auth/register
+API -> DB : Hash password (bcrypt) + Create user
+DB --> API : User created
+API -> API : Generate JWT access + refresh tokens
+API --> FE : 201 { tokens, user }
+FE -> FE : Store tokens in sessionStorage
+
+== LOGIN ==
+
+Client -> FE : Enter email + password + role
+FE -> API : POST /api/auth/login
+API -> DB : Find user + compare password (bcrypt)
+DB --> API : User found + password valid
+API -> API : Generate JWT access (1h) + refresh (7d)
+API --> FE : { accessToken, refreshToken, user }
+FE -> FE : Store in sessionStorage, redirect to dashboard
+
+== AUTHENTICATED REQUEST ==
+
+FE -> API : GET /api/some-resource\nAuthorization: Bearer <token>
+API -> Auth : Validate JWT token
+Auth -> DB : Look up user by decoded ID
+DB --> Auth : User exists + active
+Auth -> Auth : Attach req.user
+Auth -> API : Forward to route handler
+API --> FE : 200 { data }
+
+== TOKEN REFRESH (on 401) ==
+
+FE -> API : Original request fails -> 401
+FE -> API : POST /api/auth/refresh-token\n{ refreshToken }
+API -> DB : Validate refresh token
+API -> API : Generate new access + refresh tokens
+API --> FE : { accessToken, refreshToken }
+FE -> API : Retry original request with new token
+API --> FE : 200 { data }
+
+== FORGOT PASSWORD ==
+
+Client -> FE : Enter email
+FE -> API : POST /api/auth/forgot-password
+API -> API : Generate crypto reset token
+API -> Mail : Send reset link email
+Mail --> Client : Email with reset link
+Client -> FE : Click link -> Enter new password
+FE -> API : POST /api/auth/reset-password\n{ token, newPassword }
+API -> DB : Update password (bcrypt hashed)
+API --> FE : 200 Password reset successful
+
+@enduml

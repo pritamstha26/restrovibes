@@ -193,14 +193,9 @@ export default function AppointmentsTab({ appointments, isLoading, onSync, sortF
                       </>
                     )}
                     {app.status === "in_progress" && (
-                      <>
-                        <Button variant="none" className="control-btn btn-confirm me-1" onClick={() => onUpdateStatus(app.id, "complete", "Appointment completed", "success")}>
-                          ✓ Complete
-                        </Button>
-                        <Button variant="none" className="control-btn btn-cancel" onClick={() => { if (window.confirm("Mark this client as NO SHOW? This will affect their booking score.")) onUpdateStatus(app.id, "no-show", "Client marked as no-show", "danger") }}>
-                          ✕ No Show
-                        </Button>
-                      </>
+                      <Button variant="none" className="control-btn btn-confirm" onClick={() => onUpdateStatus(app.id, "complete", "Appointment completed", "success")}>
+                        ✓ Complete
+                      </Button>
                     )}
                     {app.status === "completed" && (
                       ratedIds[app.id] != null ? (

@@ -1,0 +1,52 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam componentFontSize 11
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 50
+
+title RestroVibes - High-Level System Architecture
+
+node "Docker Compose Deployment" {
+
+    node "Client Container\n(Vite :5173)" as client {
+        [React SPA] as react
+        [Axios HTTP Client] as axios
+        [React Router] as router
+        [Leaflet Map] as leaflet
+        [Bootstrap + Tailwind] as ui
+    }
+
+    node "Server Container\n(Express :5000)" as server {
+        [Express API Gateway] as gateway
+        [JWT Auth Middleware] as auth
+        [Multer Upload Middleware] as multer
+        [Controllers] as controllers
+        [Background Workers] as workers
+        [Utilities] as utils
+    }
+
+    node "Database Container\n(PostgreSQL :5433)" as db {
+        [PostgreSQL 14] as postgres
+    }
+
+    database "File Storage\n(uploads/)" as storage
+    queue "Email Service\n(Nodemailer)" as mail
+
+    client -down-> server : HTTP/REST\n(JWT Bearer tokens)
+    server -down-> postgres : Sequelize ORM\n(USB/SQL queries)
+    server -right-> storage : Multer\n(file I/O)
+    server -right-> mail : SMTP\n(password reset)
+}
+
+cloud "External APIs" as ext {
+    [OpenStreetMap Tiles] as osm
+    [Browser Geolocation API] as geo
+}
+
+leaflet -up-> osm : Map tiles
+react -up-> geo : Position data
+
+@enduml

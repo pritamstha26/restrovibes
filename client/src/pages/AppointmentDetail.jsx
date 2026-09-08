@@ -268,7 +268,11 @@ export default function AppointmentDetailPage() {
       ? `${appt.restaurateurs.first_name} ${appt.restaurateurs.last_name}`
       : "Restaurant");
   const serviceName = appt.service_name || appt.service?.name || "Service";
-  const servicePrice = appt.price || appt.service?.price || appt.booked_price || 0;
+  const servicePrice =
+    appt.booked_price != null
+      ? Number(appt.booked_price)
+      : Number(appt.price || appt.service?.price || appt.booked_price || 0) *
+        Number(appt.party_size || 1);
   const serviceDuration = appt.duration || appt.service?.duration || 0;
   const locationName =
     appt.restaurateur_location || appt.restaurateurs?.location_name || null;

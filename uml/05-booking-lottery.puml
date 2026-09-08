@@ -1,0 +1,96 @@
+@startuml RestroVibes - Booking and Lottery System
+!theme plain
+title RestroVibes - Booking Flow & Weighted Lottery System
+
+actor Client
+actor Restaurateur
+participant "Frontend" as FE
+participant "Express API" as API
+participant "PostgreSQL" as DB
+participant "ScoringEngine" as Score
+participant "WeightedLottery" as Lottery
+participant "Auto-Accept Worker\n(every 2 min)" as AutoW
+participant "Lottery Scheduler\n(every 60s)" as Loto
+
+== CLIENT CREATES APPOINTMENT ==
+
+Client -> FE : Select service, date/time,\nparty size, optional table
+FE -> API : POST /api/appointments/\n{ service_id, date, party_size,\ntable_id?, items[] }
+
+API -> API : 1. Validate future date
+API -> API : 2. Validate within opening/closing hours
+API -> API : 3. Validate 1-hour gap from\nsame-restaurateur bookings
+API -> DB : 4. Check table availability\n(if table_id provided)
+DB --> API : Table available
+API -> DB : 5. Check seat capacity:\nparty_size + activeOccupancy <= capacity
+DB --> API : Capacity OK
+
+alt Slot UNCONTESTED (no competing bookings)
+    API -> DB : Create appointment\n(status = "accepted")
+    API --> FE : 201 { appointment, status: "accepted" }
+    note right of API : Confirmed immediately
+
+else Slot CONTESTED (2+ clients, same slot)
+    API -> Score : calculateWeight(clientId)
+    Score -> DB : Fetch BookingHistory
+    DB --> Score : { noShows: 1, lateArrivals: 0,\ncompleted: 8, total: 10 }
+    Score -> Score : flexibility = ...\nloyalty = completed/total\npenalty = 0.7/10 = 0.07
+    Score -> Score : weight = BASE(100)\n+ (flexibility x 50)\n+ (loyalty x 30)\n- (penalty x 200)\n= 100 + 40 + 24 - 14 = 150
+    Score --> API : weight = 150
+    API -> DB : Create appointment\n(status = "pending")\n+ INSERT INTO lottery_pool\n(appointmentId, weight, timestamp)
+    API --> FE : 201 { appointment, status: "pending" }
+    note right of API : Awaits lottery resolution
+end
+
+== AUTO-ACCEPT WORKER (Background) ==
+
+loop Every 2 minutes
+    AutoW -> DB : SELECT pending appointments\nWHERE created_at < NOW() - 20 min\nAND status = 'pending'
+    DB --> AutoW : List of stale pending appointments
+
+    AutoW -> AutoW : Group by slot:\n(restaurateur_id, date, hour)
+
+    loop For each slot group
+        alt Slot has exactly 1 pending (no competition)
+            AutoW -> DB : UPDATE status -> "accepted"
+            AutoW -> DB : INSERT BookingHistory\n(status = "completed")
+            AutoW --> Restaurateur : Notification: new booking accepted
+        else Slot has 2+ pending (competition)
+            note over AutoW : Skip - leave for\nlottery resolution
+        end
+    end
+end
+
+== LOTTERY SCHEDULER (Background) ==
+
+loop Every 60 seconds
+    Loto -> DB : SELECT slots with 2+\nlottery_pool entries\nstatus = 'pending'
+    DB --> Loto : Contested slots
+
+    loop For each contested slot
+        Loto -> DB : SELECT all lottery entries\nORDER BY weight DESC
+        DB --> Loto : Entry list with weights + timestamps
+
+        Loto -> Lottery : weightedRandomSelect(entries)
+        Lottery -> Lottery : 1. Calculate age from timestamp\n2. Apply half-life decay boost:\n   older entries get slight advantage
+        Lottery -> Lottery : 2. Normalize weights:\n   adjustedWeight = weight x ageBoost
+        Lottery -> Lottery : 3. Weighted random selection:\n   cumsum = cumsum + adjustedWeight\n   pick random threshold\n   select first entry where cumsum >= threshold
+        Lottery --> Loto : Winner = appointment #42\nLosers = [#39, #41]
+
+        Loto -> DB : Winner: UPDATE status -> "accepted"
+        Loto -> DB : Losers: UPDATE status -> "cancelled"
+        Loto -> DB : INSERT BookingHistory for winner
+
+        Loto --> Restaurateur : Notification: booking confirmed
+        Loto --> Client : Notification: lottery result\n(winner or alternative slots)
+    end
+end
+
+== ALTERNATIVE SLOT SUGGESTIONS (Losers) ==
+
+Client -> API : POST /api/lottery/alternatives\n{ restaurantId, date, timeSlot }
+API -> DB : Find slots with capacity\nfor the same date
+API -> API : Filter out the contested slot\n+ check seat availability
+API --> FE : [{ time: "14:00", available: true,\ncapacityRemaining: 6 },\n{ time: "15:00", available: true,\ncapacityRemaining: 10 }]
+
+@enduml

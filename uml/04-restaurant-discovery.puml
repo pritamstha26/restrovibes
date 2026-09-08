@@ -1,0 +1,78 @@
+@startuml RestroVibes - Restaurant Discovery
+!theme plain
+title RestroVibes - GPS-Based Restaurant Discovery
+
+actor Client
+participant "Frontend\n(React SPA)" as FE
+participant "Browser\nGeolocation API" as Browser
+participant "Express API" as API
+participant "Haversine\nCalculation" as Haversine
+participant "PostgreSQL" as DB
+participant "Leaflet Map\n(OpenStreetMap)" as Map
+
+== INITIAL DISCOVERY ==
+
+Client -> FE : Navigate to /client/nearby-restaurants
+FE -> Browser : navigator.geolocation.getCurrentPosition()
+Browser --> FE : { latitude: 27.7172, longitude: 85.3240 }
+FE -> FE : Store client coordinates
+
+== FETCH NEARBY RESTAURANTS ==
+
+FE -> API : GET /api/location/nearby-restaurateurs\n?latitude=27.7172&longitude=85.3240\n&maxDistance=10
+API -> DB : SELECT * FROM users\nWHERE role = 'restaurateurs'\nAND active_status = true
+DB --> API : Restaurateur list
+
+loop For each restaurateur
+    API -> Haversine : haversineDistance(\nclientLat, clientLng,\nrestLat, restLng)
+    Haversine --> API : distance (km)
+    API -> API : ETA = (distance / 30) x 3600 seconds\n(assumes 30 km/h avg speed)
+    API -> DB : COUNT active appointments today\n(status IN pending, accepted, in_progress)
+    DB --> API : activeAppointments
+    API -> API : occupancyRate = min(active / capacity, 1)\nseatsRemaining = max(capacity - active, 0)
+end
+
+API -> API : Filter by maxDistance (if provided)\nSort by distance ascending
+API --> FE : [{\n  id: 15,\n  name: "Bhojan Griha",\n  distance: 2.1,\n  eta: 252 seconds,\n  occupancyRate: 0.6,\n  seatsRemaining: 8,\n  latitude: 27.7100,\n  longitude: 85.3180\n}]
+
+== RENDER MAP ==
+
+FE -> Map : Initialize Leaflet map\n(centered on client location)
+Map --> Client : Map displayed with\nblue dot (client position)
+
+loop For each nearby restaurant
+    FE -> Map : Add marker\n(lat, lng, popup: name + distance + occupancy)
+end
+Map --> Client : Restaurant pins on map\nwith info popups
+
+== VIEW RESTAURANT DETAILS ==
+
+Client -> FE : Click restaurant marker
+FE -> API : GET /api/appointments/restaurateurs/:id
+API -> DB : Fetch restaurant profile + services\n+ today's appointments
+API --> FE : {\n  restaurant: { name, hours, capacity },\n  services: [...],\n  appointments: [...]\n}
+
+FE -> API : GET /api/tables/restaurant/:restaurateurId
+API -> DB : Fetch tables with capacity + images
+API --> FE : [{ table_number: "T1", capacity: 4,\nimages: [...], is_active: true }]
+
+FE -> FE : Render restaurant profile page\nwith services, tables, map
+
+== UPDATE OWN LOCATION ==
+
+Client -> FE : Move to new location / refresh GPS
+FE -> Browser : navigator.geolocation.getCurrentPosition()
+Browser --> FE : { latitude: 27.7200, longitude: 85.3260 }
+FE -> API : PUT /api/location/update\n{ latitude: 27.7200,\nlongitude: 85.3260,\nlocation_name: "New Baneshwor" }
+API -> DB : UPDATE users SET latitude, longitude,\nlocation_name WHERE id = userId
+API --> FE : 200 Location updated
+
+== DISTANCE TO SPECIFIC RESTAURANT ==
+
+FE -> API : GET /api/location/distance/:restaurateurId
+API -> DB : Fetch restaurateur coordinates
+API -> Haversine : haversineDistance(client, restaurant)
+Haversine --> API : 3.7 km
+API --> FE : { distance: 3.7, duration: 444 }
+
+@enduml

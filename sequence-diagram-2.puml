@@ -1,0 +1,28 @@
+@startuml RestroVibes Restaurant Discovery
+!theme plain
+title RestroVibes - Restaurant Discovery (GPS-Based)
+
+actor Client
+participant "Frontend\n(React SPA)" as FE
+participant "Browser\nGeolocation API" as Browser
+participant "Express API" as API
+participant "PostgreSQL" as DB
+participant "Leaflet\n(OpenStreetMap)" as Map
+
+Client -> FE : Navigate to /client/nearby-restaurants
+FE -> Browser : navigator.geolocation.getCurrentPosition()
+Browser --> FE : { latitude, longitude }
+FE -> API : GET /api/location/nearby-restaurateurs\n?latitude=X&longitude=Y
+API -> DB : Fetch all restaurateurs with locations
+DB --> API : Restaurateur list
+API -> API : Haversine distance calculation\nfor each restaurateur
+API -> API : Calculate ETA (distance / 30 km/h)
+API -> API : Calculate occupancy rate\n(active seats / total capacity)
+API --> FE : 200 [{ restaurant, distance, eta,\noccupancyRate, seatsRemaining }]
+FE -> Map : Render markers on Leaflet map
+Map --> Client : Interactive map with restaurant pins
+Client -> FE : Click restaurant marker
+FE -> API : GET /api/appointments/restaurateurs/:id
+API --> FE : Restaurant details + services + available slots
+
+@enduml

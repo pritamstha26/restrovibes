@@ -1,0 +1,73 @@
+@startuml
+' RestroVibes — Complete State Diagram (all actors, boxed)
+' Render: plantuml state-diagrams.puml
+skinparam stateAttributeIconSize 0
+
+[*] --> EnterSystem : User opens app
+
+state "User enters system\nlanding / login page" as EnterSystem
+
+EnterSystem --> Authenticate : Provides credentials
+
+state "Authenticate user\nvalidate credentials, issue JWT" as Authenticate
+
+Authenticate --> IdentifyRole : Reads role from token
+
+state "Identify role\nclient | restaurateur | admin" as IdentifyRole
+
+IdentifyRole --> ClientBox : client
+IdentifyRole --> RestBox : restaurateur
+IdentifyRole --> AdminBox : admin
+
+state "CLIENT DASHBOARD" as ClientBox {
+  [*] --> browseRestaurants
+  browseRestaurants : "Browse restaurants\nsearch & pick a spot"
+  browseRestaurants --> submitBooking : Selects restaurant & slot
+  submitBooking : "Submit booking\nparty size + preferred time"
+  submitBooking --> awaitingApproval : Request sent
+  awaitingApproval : "Await approval\npending decision"
+  awaitingApproval --> bookingApproved : Approved
+  awaitingApproval --> [*] : Rejected & notified
+  bookingApproved : "Booking approved\nreservation secured"
+  bookingApproved --> dining : Arrives
+  bookingApproved --> noShow : Doesn't arrive
+  noShow : "No-show\nclient never arrived"
+  noShow --> penalizeUser : Penalty triggered
+  penalizeUser : "Penalize user\nupdate penalty score"
+  penalizeUser --> flagged : Threshold exceeded
+  penalizeUser --> [*] : Closed, no-show recorded
+  flagged : "Account flagged\nunder review"
+  flagged --> [*] : Review resolved
+  dining : "Dining\nservice in progress"
+  dining --> [*] : Completed & rated
+}
+
+state "RESTAURATEUR DASHBOARD" as RestBox {
+  [*] --> manageSetup
+  manageSetup : "Manage profile\nservices & tables"
+  manageSetup --> bookingReceived : New request arrives
+  bookingReceived : "Review request\nassess availability"
+  bookingReceived --> acceptBooking : Accept
+  bookingReceived --> [*] : Decline & notify
+  acceptBooking : "Booking approved\ntable assigned"
+  acceptBooking --> guestSeated : Guest arrives
+  acceptBooking --> noShowGuest : Guest absent
+  noShowGuest : "No-show\nguest never arrived"
+  noShowGuest --> [*] : Penalize client & close
+  guestSeated : "Guest seated\nserving"
+  guestSeated --> [*] : Closed & rated
+}
+
+state "ADMIN PANEL" as AdminBox {
+  [*] --> reviewActivity
+  reviewActivity : "Monitor system\nbookings, lotteries, reports"
+  reviewActivity --> manageUsers : Flagged account
+  manageUsers : "Manage accounts\nreview flagged, enable / disable"
+  manageUsers --> reviewActivity : Return to monitoring
+}
+
+ClientBox --> [*] : Logout
+RestBox --> [*] : Logout
+AdminBox --> [*] : Logout
+
+@enduml

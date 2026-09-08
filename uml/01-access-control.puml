@@ -1,0 +1,103 @@
+@startuml RestroVibes - Access Control and RBAC
+!theme plain
+title RestroVibes - Access Control & Role-Based Access (RBAC)
+
+actor Client as C
+actor Restaurateur as R
+actor Admin as A
+participant "Frontend\n(React SPA)" as FE
+participant "Express API" as API
+participant "Auth Middleware\n(authenticateToken)" as Auth
+participant "JWT Verify\n(decodeToken)" as JWT
+participant "PostgreSQL" as DB
+
+== REGISTRATION (Role Assignment) ==
+
+C -> FE : Sign up as Client
+FE -> API : POST /api/auth/register\n{ name, email, password, role: "client" }
+API -> API : Allowed roles: ["client", "restaurateurs"]
+API -> DB : Create user (role = "client")
+API --> FE : 201 { user, tokens }
+
+R -> FE : Sign up as Restaurateur
+FE -> API : POST /api/auth/register\n{ name, email, password, role: "restaurateurs",\nlatitude, longitude, seat_capacity, ... }
+API -> API : Allowed roles: ["client", "restaurateurs"]
+API -> DB : Create user (role = "restaurateurs")\n+ store GPS location + capacity
+API --> FE : 201 { user, tokens }
+
+A -> FE : Create user via Admin Panel
+FE -> API : POST /api/auth/register\n(Authorization: Bearer <adminToken>)
+API -> JWT : Verify token, check role = "admin"
+JWT --> API : Admin confirmed
+API -> API : Allowed roles: ["client", "restaurateurs", "admin"]
+API -> DB : Create user with specified role
+API --> FE : 201 { user info } (no auto-login)
+
+== LOGIN (Role-Specific Sessions) ==
+
+C -> FE : Login as Client\n{ email, password, role: "client" }
+FE -> API : POST /api/auth/login\n{ email, password, role: "client" }
+API -> DB : findOne({ email, role: "client" })
+DB --> API : User found
+API -> API : Generate JWT (role = "client")
+API --> FE : { accessToken, refreshToken }
+
+note over DB : Same email can have separate\naccounts for different roles\n(e.g., client + restaurateur)
+
+== AUTHENTICATED REQUEST (JWT Validation) ==
+
+FE -> API : GET /api/resource\nAuthorization: Bearer <token>
+API -> Auth : Extract Bearer token
+Auth -> JWT : jwt.verify(token, JWT_SECRET)
+JWT --> Auth : decoded = { id, role, iat, exp }
+Auth -> DB : UsersModel.findByPk(decoded.id)
+DB --> Auth : User exists + active
+Auth -> Auth : Attach req.user = user record
+Auth -> API : Forward to route handler
+
+== ROLE-BASED ENFORCEMENT (Controller Level) ==
+
+== Client Permissions ==
+C -> API : POST /api/appointments/\n{ service_id, date, party_size }
+API -> JWT : decodeToken(token)
+JWT --> API : role = "client", id = 42
+API -> API : Verify: clientId matches caller
+API --> C : Appointment created
+
+C -x API : PUT /api/appointments/:id/confirm
+note right of C : BLOCKED: Only restaurateur\nor admin can confirm
+
+== Restaurateur Permissions ==
+R -> API : PUT /api/appointments/:id/confirm
+API -> JWT : decodeToken(token)
+JWT --> API : role = "restaurateurs", id = 15
+API -> DB : Fetch appointment
+API -> API : Verify: appointment.restaurateurId == 15
+API -> DB : Update status -> "accepted"
+API --> R : Confirmed
+
+R -x API : DELETE /api/users/delete/:id
+note right of R : BLOCKED: Only admin\ncan delete users
+
+== Admin Permissions ==
+A -> API : PUT /api/appointments/:id/cancel\n(Any appointment)
+API -> JWT : decodeToken(token)
+JWT --> API : role = "admin"
+API -> API : Admin bypass: no ownership check
+API -> DB : Update status -> "cancelled"
+API --> A : Cancelled
+
+A -> API : POST /api/lottery/resolve\n{ restaurantId, bookingDate, timeSlot }
+API -> Auth : Inline middleware:\nreq.user.role !== "admin" -> 403
+Auth --> API : Admin confirmed
+API -> API : Run weighted lottery manually
+API --> A : Lottery resolved
+
+A -> API : DELETE /api/users/delete/:id
+API -> JWT : decodeToken(token)
+JWT --> API : role = "admin"
+API -> API : Verify: target is not also admin
+API -> DB : Cancel user's appointments\n+ Delete user record
+API --> A : User deleted
+
+@enduml

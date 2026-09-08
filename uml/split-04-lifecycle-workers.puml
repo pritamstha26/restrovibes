@@ -1,0 +1,134 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 180
+
+title RestroVibes - Appointment Lifecycle & Workers
+
+actor Client
+actor Restaurateur
+participant "Web Interface" as Web
+participant "AppointmentController" as Appt
+participant "ScoringEngine" as Score
+participant "OverstayWorker\n(60s)" as OW
+participant "Database" as DB
+
+== State Machine ==
+
+note over Client,OW
+  pending --> accepted --> in_progress --> completed
+     |           |              |
+     |           |              +-> completed (overstayed)
+     |           +-> no_show (never arrived)
+     +-> cancelled
+end note
+
+== Confirm Appointment ==
+
+Restaurateur -> Web : Accept booking
+Web -> Appt : PUT /api/appointments/:id/confirm
+Appt -> DB : Verify restaurateurId matches
+Appt -> DB : UPDATE status -> "accepted"
+Appt --> Web : 200 Confirmed
+
+== Mark Arrival (Late Detection) ==
+
+Restaurateur -> Web : Mark client arrived
+Web -> Appt : PUT /api/appointments/:id/arrived
+Appt -> DB : Fetch scheduledTime
+Appt -> Appt : diffMinutes = (now - scheduledTime) / 60000
+
+alt Client > 15 min late
+    Appt -> DB : UPDATE is_late = true
+    Appt -> DB : INSERT BookingHistory\n(status = "late_arrival")
+    Appt -> Score : recalculateUserPenalty()
+    Score -> Score : penalty += lateArrivals x 0.4
+    Score -> DB : UPDATE penalty fields
+    Score --> Appt : Updated
+else On time
+    Appt -> DB : UPDATE actual_arrival_time
+end
+
+Appt -> DB : UPDATE status -> "in_progress"
+Appt --> Web : 200 Arrived
+
+== Complete Appointment ==
+
+Restaurateur -> Web : Mark completed
+Web -> Appt : PUT /api/appointments/:id/complete
+Appt -> DB : UPDATE status -> "completed"
+Appt -> DB : INSERT BookingHistory
+Appt -> Score : recalculateUserPenalty()
+Score -> Score : decay applied (completion bonus)
+Score --> Appt : Updated
+Appt --> Web : 200 Completed
+
+== Mark No-Show ==
+
+Restaurateur -> Web : Mark no-show
+Web -> Appt : PUT /api/appointments/:id/no-show
+Appt -> DB : UPDATE status -> "no_show"
+Appt -> DB : INSERT BookingHistory
+Appt -> Score : recalculateUserPenalty()
+Score -> Score : penalty += noShows x 0.7
+Score --> Appt : Updated
+Appt --> Web : 200 No-show
+
+== Client: Request Extension ==
+
+Client -> Web : Request extension
+Web -> Appt : POST /api/appointments/:id/extend\n{ extra_minutes: 30 }
+Appt -> Appt : Verify client owns appointment\n+ status allows extension
+
+Appt -> DB : BEGIN (SERIALIZABLE)
+Appt -> DB : SUM(party_size) overlapping\nin extension window
+DB --> Appt : seatsTaken
+
+alt Capacity OK
+    Appt -> DB : UPDATE end_time,\nextended_until
+    Appt -> DB : COMMIT
+    Appt --> Web : 200 Extended
+else Insufficient
+    Appt -> DB : ROLLBACK
+    Appt --> Web : 409 No capacity
+end
+
+== Client: Cancel ==
+
+Client -> Web : Cancel booking
+Web -> Appt : PUT /api/appointments/:id/cancel
+Appt -> DB : Verify ownership or admin
+Appt -> DB : UPDATE status -> "cancelled"
+Appt --> Web : 200 Cancelled
+
+== Overstay Worker (Background) ==
+
+loop Every 60 seconds
+    OW -> DB : SELECT in_progress\nWHERE end_time + 10min < NOW()
+    DB --> OW : Overstayed list
+
+    loop Per appointment
+        OW -> DB : UPDATE -> "completed"
+        OW -> DB : INSERT BookingHistory\n(status = "overstayed")
+        OW -> Score : recalculatePenalty()
+        Score -> Score : penalty += overstays x 0.15
+        Score --> OW : Updated
+    end
+
+    OW -> DB : SELECT pending/accepted\nWHERE past grace (never started)
+    DB --> OW : No-show list
+
+    loop Per appointment
+        OW -> DB : UPDATE -> "no_show"
+        OW -> DB : INSERT BookingHistory
+        OW -> Score : recalculatePenalty()
+        Score -> Score : penalty += noShows x 0.7
+        Score --> OW : Updated
+    end
+end
+
+@enduml

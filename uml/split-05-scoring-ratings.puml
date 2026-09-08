@@ -1,0 +1,109 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 180
+
+title RestroVibes - Reliability Scoring & Ratings
+
+actor Client
+actor Restaurateur
+participant "Web Interface" as Web
+participant "AppointmentController" as Appt
+participant "RatingController" as Rating
+participant "ScoringEngine" as Score
+participant "Database" as DB
+
+== Scoring Algorithm ==
+
+note over Score,DB
+  rawPenalty = (noShows x 0.7 + lateArrivals x 0.4
+              + lateCancellations x 0.3 + overstays x 0.15)
+              / totalBookings
+
+  completionRatio = completed / total
+  decay = min(completionRatio x 0.15, rawPenalty x 0.3)
+  penaltyScore = max(0, rawPenalty - decay)
+
+  Thresholds:
+    0.00 - 0.15  -> "reliable"   (green)
+    0.15 - 0.40  -> "at_risk"    (yellow)
+    > 0.40       -> "flagged"    (red)
+end note
+
+== Calculate Penalty ==
+
+Appt -> Score : recalculateUserPenalty(userId)
+Score -> DB : SELECT status, COUNT(*)\nFROM booking_history\nGROUP BY status
+DB --> Score : { noShows: 3, lateArrivals: 1,\ncompleted: 15, total: 22 }
+
+Score -> Score : rawPenalty = (3x0.7 + 1x0.4\n+ 2x0.3 + 1x0.15) / 22\n= 0.148
+Score -> Score : completionRatio = 15/22 = 0.682
+Score -> Score : decay = min(0.102, 0.044) = 0.044
+Score -> Score : penaltyScore = max(0, 0.104) = 0.104
+
+Score -> DB : UPDATE penalty_score,\nreliability_status,\nis_flagged, cached counts
+DB --> Score : Updated
+
+== Restaurateur Views Client Risk ==
+
+Restaurateur -> Web : View appointment details
+Web -> Appt : GET /api/appointments/:id
+Appt -> DB : Fetch appointment + client risk
+DB --> Appt : { penalty_score, status,\nis_flagged, history }
+Appt --> Web : { appointment, clientRisk }
+Web --> Restaurateur : ClientRiskPopover\n(color-coded badge)
+
+== Risk Profile Endpoint ==
+
+Restaurateur -> Web : Get client risk profile
+Web -> Appt : GET /api/appointments/client/:id/risk-profile
+Appt -> DB : Fetch stats + history
+DB --> Appt : Risk data
+Appt -> Appt : Classify:\nhigh: flagged or > 0.4\nmedium: > 0.15\nlow: otherwise
+Appt --> Web : { riskLevel, penaltyScore, history }
+Web --> Restaurateur : Risk assessment
+
+== Bidirectional Rating System ==
+
+Client -> Web : Rate restaurant\n(1-5 stars + comment)
+Web -> Rating : POST /api/ratings/\n{ appointmentId,\ntargetType: "restaurateur",\nscore, comment }
+Rating -> DB : Verify appointment completed
+Rating -> DB : Check unique constraint
+Rating -> DB : INSERT INTO ratings
+Rating -> DB : SELECT AVG(score)\nWHERE targetType = "restaurateur"
+DB --> Rating : avg = 4.5, count = 12
+Rating --> Web : 201 { average: 4.5 }
+
+Restaurateur -> Web : Rate client\n(1-5 stars + comment)
+Web -> Rating : POST /api/ratings/\n{ appointmentId,\ntargetType: "client",\nscore, comment }
+Rating -> DB : Verify appointment completed
+Rating -> DB : Check unique constraint
+Rating -> DB : INSERT INTO ratings
+Rating -> DB : SELECT AVG(score)\nWHERE targetType = "client"
+DB --> Rating : avg = 4.2, count = 8
+Rating --> Web : 201 { average: 4.2 }
+
+note over Rating,DB
+  Constraints:
+  - One rating per appointment per direction
+  - Score range: 1-5 stars
+  - Only after appointment completed
+  - Enforced by unique DB constraint
+end note
+
+== Admin: Backfill Penalties ==
+
+Restaurateur -> Web : POST /api/appointments/admin/backfill-penalties
+Web -> DB : SELECT clients
+DB --> Web : All client records
+loop Per client
+    Web -> Score : recalculatePenalty(id)
+    Score -> DB : Fetch + update
+end
+Web --> Restaurateur : 200 All recalculated
+
+@enduml

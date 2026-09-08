@@ -1,0 +1,99 @@
+@startuml RestroVibes - Admin Operations
+!theme plain
+title RestroVibes - Admin Panel Operations
+
+actor Admin as A
+participant "Frontend\n(Admin Panel)" as FE
+participant "Express API" as API
+participant "PostgreSQL" as DB
+participant "ScoringEngine" as Score
+
+== ADMIN: CREATE USER (Any Role) ==
+
+A -> FE : Create user via admin panel
+FE -> API : POST /api/auth/register\n{ name, email, password,\nrole: "admin" }\n(Authorization: Bearer <adminToken>)
+API -> API : Verify caller has admin role\n(allowed: ["client","restaurateurs","admin"])
+API -> DB : Create user with any role
+API --> FE : 201 { user info }\n(no auto-login as new user)
+
+== ADMIN: UPDATE ANY USER ==
+
+A -> FE : Edit user profile
+FE -> API : PUT /api/users/:id\n{ first_name, phone, ... }
+API -> API : Verify: caller is admin\n(admin bypass: no same-user check)
+API -> DB : Validate phone, hash password if changed
+API -> DB : UPDATE user record
+API --> FE : 200 Updated
+
+== ADMIN: DELETE USER ==
+
+A -> FE : Delete user
+FE -> API : DELETE /api/users/delete/:id
+API -> DB : Verify caller role = "admin"
+API -> DB : Verify target is not also admin
+API -> DB : UPDATE related appointments\nstatus -> "cancelled"
+API -> DB : DELETE FROM users WHERE id = :id
+API --> FE : 200 User deleted
+
+== ADMIN: CANCEL ANY APPOINTMENT ==
+
+A -> FE : Cancel appointment
+FE -> API : PUT /api/appointments/:id/cancel
+API -> API : Admin bypass:\nno ownership check needed
+API -> DB : UPDATE status -> "cancelled"
+API --> FE : 200 Cancelled
+
+== ADMIN: BACKFILL ALL PENALTIES ==
+
+A -> FE : Recalculate all client scores
+FE -> API : POST /api/appointments/admin/backfill-penalties
+API -> DB : SELECT * FROM users\nWHERE role = 'client'
+DB --> API : All client records
+
+loop For each client
+    API -> Score : recalculateUserPenalty(clientId)
+    Score -> DB : SELECT status, COUNT(*)\nFROM booking_history\nWHERE client_id = clientId\nGROUP BY status
+    DB --> Score : Counts by status
+    Score -> Score : Compute penaltyScore,\nreliability_status,\nis_flagged
+    Score -> DB : UPDATE user cached fields
+end
+
+API --> FE : 200 All penalties recalculated
+
+== ADMIN: MANUAL LOTTERY RESOLVE ==
+
+A -> FE : Resolve contested slot manually
+FE -> API : POST /api/lottery/resolve\n{ restaurantId: 15,\nbookingDate: "2026-09-03",\ntimeSlot: "12:00" }
+API -> API : Inline admin-only middleware:\nreq.user.role === "admin"
+API -> DB : Fetch lottery entries for slot
+API -> API : Run weighted lottery algorithm
+API -> DB : Winner -> status = "accepted"
+API -> DB : Losers -> status = "cancelled"
+API --> FE : 200 { winner, losers }
+
+== ADMIN: MANAGE ANY RESTAURANT TABLES ==
+
+A -> FE : Create table for any restaurant
+FE -> API : POST /api/tables\n{ restaurateurId: 15,\ntable_number: "VIP-1", capacity: 8 }
+API -> API : Admin bypass:\nno restaurateurId ownership check
+API -> DB : INSERT INTO tables
+API --> FE : 201 Table created
+
+== ADMIN: VIEW ALL DATA ==
+
+A -> FE : View all bookings
+FE -> API : GET /api/appointments/all
+API -> DB : SELECT * FROM appointments\nORDER BY date DESC
+API --> FE : All appointments
+
+A -> FE : View all users
+FE -> API : GET /api/users/all
+API -> DB : SELECT * FROM users
+API --> FE : All users
+
+A -> FE : View all tables
+FE -> API : GET /api/tables/all
+API -> DB : SELECT t.*, u.first_name, u.last_name\nFROM tables t\nJOIN users u ON t.restaurateur_id = u.id
+API --> FE : All tables with owner info
+
+@enduml

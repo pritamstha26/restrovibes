@@ -1,0 +1,65 @@
+@startuml RestroVibes - Service Management
+!theme plain
+title RestroVibes - Restaurateur Service Management
+
+actor Restaurateur as R
+actor Client as C
+participant "Frontend" as FE
+participant "Express API" as API
+participant "PostgreSQL" as DB
+
+== RESTAURATEUR: ADD SERVICE ==
+
+R -> FE : Create new service\n(name, price, duration)
+FE -> API : POST /api/restaurateurs-services/\n{ name: "Veg Thali", price: 500,\nduration: 45 }
+API -> API : resolveRestaurateurId():\nExtract restaurateurId from JWT\nVerify token.id == body.restaurateurId
+API -> DB : Check unique constraint\n(restaurateurId, name)
+API -> DB : INSERT INTO restaurateur_services\n(name, price, duration, restaurateurId)
+DB --> API : Service created (id=3)
+API --> FE : 201 { service: { id: 3, name: "Veg Thali",\nprice: 500, duration: 45 }}
+
+== RESTAURATEUR: UPDATE SERVICE ==
+
+R -> FE : Edit service details
+FE -> API : PUT /api/restaurateurs-services/:id\n{ name: "Veg Thali Deluxe", price: 650 }
+API -> API : resolveRestaurateurId():\nVerify ownership
+API -> DB : Find service WHERE id AND restaurateurId
+DB --> API : Service found
+API -> DB : UPDATE name, price, duration
+API --> FE : 200 Updated
+
+== RESTAURATEUR: DELETE SERVICE ==
+
+R -> FE : Delete service
+FE -> API : DELETE /api/restaurateurs-services/:id
+API -> API : resolveRestaurateurId():\nVerify ownership
+API -> DB : DELETE FROM restaurateur_services\nWHERE id AND restaurateurId
+API --> FE : 200 Deleted
+
+== CLIENT: VIEW SERVICES ==
+
+C -> FE : Browse restaurant services
+FE -> API : GET /api/restaurateurs-services/all\n?restaurateurId=15&dynamic=true
+API -> DB : SELECT * FROM restaurateur_services\nWHERE restaurateurId = 15
+DB --> API : Service list
+API -> DB : For dynamic mode:\nCOUNT active appointments today\n+ fetch seat_capacity
+DB --> API : demandInfo = {\n  activeAppointments: 12,\n  totalCapacity: 20\n}
+API --> FE : [{\n  id: 3,\n  name: "Veg Thali",\n  price: 500,\n  duration: 45,\n  demandInfo: { activeAppointments: 12,\n  totalCapacity: 20 }\n}]
+
+== RESTAURATEUR: GET RESTAURANT PROFILE ==
+
+R -> FE : View my restaurant profile
+FE -> API : GET /api/restaurateurs-services/:id\n(restaurateur ID)
+API -> DB : SELECT * FROM users\nWHERE id = :id AND role = 'restaurateurs'
+DB --> API : Restaurant profile
+API --> FE : {\n  name: "Bhojan Griha",\n  email: "info@bhojangriha.com",\n  phone: "9841234567",\n  seat_capacity: 20,\n  opening_time: "10:00",\n  closing_time: "22:00",\n  latitude: 27.7100,\n  longitude: 85.3180\n}
+
+== SEAT CAPACITY MANAGEMENT ==
+
+R -> FE : Update seat capacity
+FE -> API : PUT /api/users/restaurateur/:id/capacity\n{ seat_capacity: 25 }
+API -> API : Verify: caller is restaurateur\nAND matches :id
+API -> DB : UPDATE seat_capacity = 25\nWHERE id = :id
+API --> FE : 200 Capacity updated
+
+@enduml

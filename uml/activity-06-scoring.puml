@@ -1,0 +1,106 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam activityFontSize 12
+skinparam arrowFontSize 10
+
+title RestroVibes - Reliability Scoring & Client Risk
+
+|System|
+start
+
+:Trigger penalty calculation\n(on appointment state change);
+
+|ScoringEngine|
+:Fetch BookingHistory for client;
+
+:Count events by status:\n- no_shows\n- late_arrivals\n- late_cancellations\n- overstays\n- completed\n- total_bookings;
+
+:Calculate rawPenalty =\n(noShows x 0.7\n+ lateArrivals x 0.4\n+ lateCancellations x 0.3\n+ overstays x 0.15)\n/ totalBookings;
+
+:Calculate completionRatio =\ncompleted / total;
+
+:Calculate decay =\nmin(completionRatio x 0.15,\nrawPenalty x 0.3);
+
+:Calculate penaltyScore =\nmax(0, rawPenalty - decay);
+
+if (penaltyScore <= 0.15?) then (yes)
+    :Set status = "reliable";
+    :Set is_flagged = false;
+    note right : Green badge
+else (no)
+    if (penaltyScore <= 0.4?) then (yes)
+        :Set status = "at_risk";
+        :Set is_flagged = false;
+        note right : Yellow badge
+    else (no)
+        :Set status = "flagged";
+        :Set is_flagged = true;
+        note right : Red badge
+    endif
+endif
+
+:Update cached fields in users table:\n- penalty_score\n- reliability_status\n- is_flagged\n- total_no_shows\n- total_late_cancellations\n- total_late_arrivals\n- total_completed_bookings;
+
+|Database|
+:Store updated user scores;
+
+stop
+
+' ============================
+' RESTAURATEUR REVIEWS CLIENT
+' ============================
+
+|Restaurateur|
+start
+:View appointment details;
+
+|Web Interface|
+:Fetch appointment + client risk data;
+
+|AppointmentController|
+:Join with user penalty fields;
+:Classify risk level:\nhigh: flagged or > 0.4\nmedium: > 0.15\nlow: otherwise;
+
+|Web Interface|
+:Display ClientRiskPopover:\n- Color badge (green/yellow/red)\n- Penalty score\n- History summary\n- Risk classification;
+
+|Restaurateur|
+:Make booking decision\nbased on client risk;
+
+stop
+
+' ============================
+' ADMIN BACKFILL
+' ============================
+
+|Admin|
+start
+:Trigger backfill all penalties;
+
+|Web Interface|
+:Send POST /api/appointments/admin/backfill-penalties;
+
+|AppointmentController|
+:Fetch all clients;
+
+while (More clients?) is (yes)
+    :Select next client;
+
+    |ScoringEngine|
+    :Recalculate penalty\n(full algorithm);
+
+    |AppointmentController|
+    :Update user cached fields;
+
+    :Next client;
+
+endwhile (no)
+
+:All penalties recalculated;
+
+|Admin|
+:Review updated risk statuses;
+
+stop

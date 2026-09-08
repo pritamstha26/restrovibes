@@ -213,7 +213,7 @@ const RestaurantProfile = ({ restaurantId }) => {
                 </div>
                 <div className="s-vis-info-row">
                   <FaMapMarkerAlt className="s-vis-icon" />
-                  <span className="s-vis-text">{restaurant.location || "—"}</span>
+                  <span className="s-vis-text">{restaurant.location_name || restaurant.location || "—"}</span>
                 </div>
                 <div className="s-vis-info-row highlight-row">
                   <FaClock className="s-vis-icon highlight-icon" />

@@ -6,6 +6,7 @@ import {
   FaEnvelope,
   FaSearch,
   FaUtensils,
+  FaStar,
 } from "react-icons/fa";
 import {
   MapContainer,
@@ -41,6 +42,7 @@ const NearbyRestaurants = () => {
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [selectedRestaurateur, setSelectedRestaurateur] = useState(null);
   const [showRestaurateurProfile, setShowRestaurateurProfile] = useState(false);
+  const [restaurantRatings, setRestaurantRatings] = useState({});
 
   const lerp = (a, b, t) => a + (b - a) * Math.min(Math.max(t, 0), 1);
 
@@ -203,6 +205,23 @@ const NearbyRestaurants = () => {
           };
         });
         setRestaurateurs(data);
+        const ratingsMap = {};
+        await Promise.all(
+          data.map(async (r) => {
+            try {
+              const res = await api.get(`/ratings/average/restaurateur/${r.id}`);
+              if (res.status === 200) {
+                ratingsMap[r.id] = {
+                  average: res.data.data.averageRating || 0,
+                  total: res.data.data.totalRatings || 0,
+                };
+              }
+            } catch {
+              ratingsMap[r.id] = { average: 0, total: 0 };
+            }
+          })
+        );
+        setRestaurantRatings(ratingsMap);
         if (data.length === 0) {
           setError("No restaurants found. Try adjusting your search radius.");
         }
@@ -473,6 +492,13 @@ const NearbyRestaurants = () => {
                           <h3 className="nr-card-name">
                             {full || "Unnamed Restaurant"}
                           </h3>
+                          {restaurantRatings[id] && restaurantRatings[id].total > 0 && (
+                            <span className="nr-rating-badge">
+                              <FaStar style={{ fontSize: "0.55rem", color: "#f59e0b" }} />
+                              {Number(restaurantRatings[id].average).toFixed(1)}
+                              <span className="nr-rating-count">({restaurantRatings[id].total})</span>
+                            </span>
+                          )}
                           {dist != null && (
                             <span className="nr-distance-badge" style={getDistanceBadgeStyle(dist)}>
                               <FaLocationArrow style={{ fontSize: "0.55rem" }} />

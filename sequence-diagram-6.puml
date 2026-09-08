@@ -1,0 +1,34 @@
+@startuml RestroVibes Rating System
+!theme plain
+title RestroVibes - Bidirectional Rating System
+
+actor Client
+actor Restaurateur
+participant "Express API" as API
+participant "PostgreSQL" as DB
+
+== AFTER APPOINTMENT COMPLETED ==
+
+Client -> API : POST /api/ratings/\n{ appointmentId, targetType: "restaurateur",\nscore: 5, comment: "Great food!" }
+API -> DB : Insert rating (client -> restaurateur)
+DB --> API : Rating created
+API -> DB : Calculate new average for restaurateur
+API --> Client : Rating submitted
+
+Restaurateur -> API : POST /api/ratings/\n{ appointmentId, targetType: "client",\nscore: 4, comment: "Good customer" }
+API -> DB : Insert rating (restaurateur -> client)
+DB --> API : Rating created\n(enforced: 1 per direction per appointment)
+API -> DB : Calculate new average for client
+API --> Restaurateur : Rating submitted
+
+== VIEW RATINGS ==
+
+Client -> API : GET /api/ratings/average/restaurateur/:id
+API -> DB : AVG(score) WHERE targetType="restaurateur"
+API --> Client : { average: 4.5, count: 12 }
+
+Restaurateur -> API : GET /api/ratings/average/client/:id
+API -> DB : AVG(score) WHERE targetType="client"
+API --> Restaurateur : { average: 4.2, count: 8 }
+
+@enduml

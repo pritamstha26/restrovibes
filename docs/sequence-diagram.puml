@@ -1,0 +1,147 @@
+@startuml
+' RestroVibes — System Sequence Diagram
+' Render: plantuml sequence-diagram.puml -> produces sequence diagram
+
+title RestroVibes — System Sequence Diagram
+
+' ================= PARTICIPANTS =================
+actor Client as CL
+actor Restaurateur as RE
+actor Admin as AD
+participant "AuthMiddleware" as AM
+participant "Controllers" as CT
+participant "ScoringEngine" as SE
+participant "LotteryScheduler" as LS
+participant "AutoAcceptWorker" as AA
+participant "OverstayWorker" as OW
+database "PostgreSQL / Sequelize Models" as DB
+
+CL -> AM : HTTP request (Bearer token)
+AM --> CT : authenticated (req, res)
+
+' ================= REGISTER / LOGIN =================
+group Register / Login
+  CL -> CT : POST /api/auth/register|login
+  CT -> DB : create / verify UsersModel
+  CT -> CT : hash password (bcrypt)
+  alt valid credentials
+    CT --> CL : access + refresh JWT tokens
+  else invalid
+    CT --> CL : 401 error
+  end
+  opt access token expired (401)
+    CL -> CT : POST /api/auth/refresh-token
+    CT -> DB : rotate refresh_token
+    CT --> CL : new tokens, retry original request
+  end
+end
+
+' ================= BOOK APPOINTMENT =================
+group Book Appointment
+  CL -> CT : POST /api/appointments (date, party_size, serviceId, restaurateurId)
+  CT -> CT : validate (service hours, 1h gap, max 3/day)
+  CT -> DB : sum active party sizes per restaurateur
+  alt available >= party_size
+    CT -> DB : create AppointmentModel (status=pending, end_time=+duration)
+    alt slot has competition (>=2 pending same hour)
+      CT -> SE : calculateTotalWeight(userId, restaurantId, prefs)
+      SE --> CT : weight = 100 + flex*50 + loyalty*30 - penalty*200
+      CT -> DB : create LotteryPoolModel entry
+    else no competition
+      note right: left for AutoAcceptWorker / manual accept
+    end
+    CT --> CL : 201 appointment created
+  else capacity exceeded
+    CT --> CL : 409 seat capacity exceeded
+  end
+end
+
+' ================= LOTTERY RESOLUTION (background) =================
+group Lottery Resolver (every 60s)
+  LS -> DB : pending LotteryPoolModel grouped by slot, count>=2
+  loop each contested slot
+    LS -> CT : resolveLottery(restaurantId, date, slot)
+    CT -> weightedLottery : selectWeightedEntry(entries)
+    CT -> DB : winner status=accepted, losers=cancelled
+    CT -> DB : update LotteryPoolModel won/lost
+    CT -> SE : recalculateUserPenalty (affected clients)
+  end
+end
+
+' ================= AUTO-ACCEPT (background, every 2 min) =================
+group Auto-Accept Worker (every 2 min, grace 20 min)
+  AA -> DB : pending AppointmentModel older than grace
+  AA -> AA : group by slot (restaurateur + hour)
+  alt exactly 1 pending per slot
+    AA -> DB : AppointmentModel status=accepted
+  else >= 2 pending
+    note right: leave for manual review
+  end
+end
+
+' ================= RESTAURATEUR LIFECYCLE ACTIONS =================
+group Restaurateur Appointment Actions
+  RE -> CT : PUT /api/appointments/:id/confirm
+  CT -> DB : AppointmentModel status=accepted
+
+  RE -> CT : PUT /api/appointments/:id/arrived
+  CT -> DB : set actual_arrival_time = now
+  alt now - scheduled > 15 min
+    CT -> DB : AppointmentModel is_late=true
+    CT -> DB : BookingHistoryModel status=late_arrival
+    CT -> SE : recalculateUserPenalty(clientId)
+  end
+
+  RE -> CT : PUT /api/appointments/:id/no-show
+  CT -> DB : AppointmentModel status=no_show
+  CT -> DB : BookingHistoryModel status=no_show
+  CT -> SE : recalculateUserPenalty(clientId)
+
+  RE -> CT : PUT /api/appointments/:id/complete
+  CT -> DB : AppointmentModel status=completed
+  CT -> DB : BookingHistoryModel status=completed
+  CT -> SE : recalculateUserPenalty(clientId)
+  CT -> DB : release reserved seats (tableCapacity)
+end
+
+' ================= OVERSTAY (background, every 60s) =================
+group Overstay Worker (every 60s, grace 10 min)
+  OW -> DB : AppointmentModel past end_time + grace
+  loop each overdue appointment
+    alt status == in_progress
+      OW -> DB : status=completed
+      OW -> DB : BookingHistoryModel status=overstayed
+    else status == pending|accepted
+      OW -> DB : status=no_show
+      OW -> DB : BookingHistoryModel status=no_show
+    end
+    OW -> SE : recalculateUserPenalty
+    OW -> DB : release reserved seats
+  end
+end
+
+' ================= RATING (bidirectional) =================
+group Rating
+  CL / RE -> CT : POST /api/ratings (rating 1-5, targetType)
+  CT -> DB : RatingModel (unique appointmentId+raterId+targetType)
+  CT -> DB : recompute average rating
+  CT --> CL / RE : 201 / 200 rating saved
+end
+
+' ================= LOCATION-BASED DISCOVERY =================
+group Nearby Discovery
+  CL -> CT : GET /api/location/nearby-restaurateurs?lat&lng&radius
+  CT -> locationUtils : calculateDistance (Haversine, R=6371km)
+  CT -> locationUtils : calculate ETA at 30 km/h
+  CT -> DB : occupancy = seat_capacity - active seats
+  CT --> CL : nearby restaurants + distance + ETA + occupancy
+end
+
+' ================= ADMIN MANAGEMENT =================
+group Admin Management
+  AD -> CT : GET /api/users, /api/appointments, /api/lottery
+  CT -> DB : query all records
+  CT --> AD : full system data + risk profiles
+end
+
+@enduml

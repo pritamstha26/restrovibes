@@ -1,0 +1,97 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 180
+
+title RestroVibes - Booking & Lottery System
+
+actor Client
+actor Restaurateur
+participant "Web Interface" as Web
+participant "AppointmentController" as Appt
+participant "ScoringEngine" as Score
+participant "AutoAcceptWorker\n(2 min)" as AutoW
+participant "LotteryScheduler\n(60s)" as Loto
+participant "Database" as DB
+
+== Create Appointment ==
+
+Client -> Web : Select service, date/time,\nparty size, optional table
+Web -> Appt : POST /api/appointments/\n{ service_id, date, party_size,\ntable_id?, items[] }
+
+Appt -> Appt : Validate: future date,\nhours, 1-hour gap rule
+
+alt Table selected
+    Appt -> DB : Check table overlap query
+    DB --> Appt : Available
+    Appt -> Appt : Verify party_size <= capacity
+end
+
+Appt -> DB : Check seat capacity
+DB --> Appt : OK
+
+Appt -> Score : calculateWeight(clientId)
+Score -> DB : Fetch BookingHistory
+DB --> Score : { noShows, completed, total }
+Score -> Score : weight = BASE(100)\n+ (flex x 50) + (loyalty x 30)\n- (penalty x 200)
+Score --> Appt : weight
+
+Appt -> DB : INSERT appointment\n(status = "pending")\n+ INSERT lottery_pool
+DB --> Appt : Created
+Appt --> Web : 201 { status: "pending" }
+Web --> Client : In lottery queue
+
+== Auto-Accept Worker (Background) ==
+
+loop Every 2 minutes
+    AutoW -> DB : SELECT pending\nWHERE age > 20 min
+    DB --> AutoW : Stale pending list
+
+    AutoW -> AutoW : Group by slot
+
+    loop Per slot
+        alt 1 pending (no competition)
+            AutoW -> DB : UPDATE -> "accepted"
+            AutoW -> DB : INSERT BookingHistory
+            AutoW --> Restaurateur : Notification
+        else 2+ pending
+            note over AutoW : Skip for lottery
+        end
+    end
+end
+
+== Lottery Resolution (Background) ==
+
+loop Every 60 seconds
+    Loto -> DB : SELECT slots with\n2+ pending entries
+    DB --> Loto : Contested slots
+
+    loop Per slot
+        Loto -> DB : Fetch lottery entries
+        DB --> Loto : Weights + timestamps
+
+        Loto -> Loto : Weighted random:\n1. Age from timestamp\n2. Half-life decay boost\n3. Normalize weights\n4. Random threshold select
+        Loto --> Loto : Winner + Losers
+
+        Loto -> DB : Winner -> "accepted"
+        Loto -> DB : Losers -> "cancelled"
+        Loto -> DB : INSERT BookingHistory
+
+        Loto --> Restaurateur : Booking confirmed
+        Loto --> Client : Lottery result
+    end
+end
+
+== Alternative Slots (Losers) ==
+
+Client -> Web : View alternative slots
+Web -> Appt : POST /api/lottery/alternatives\n{ restaurantId, date, timeSlot }
+Appt -> DB : Find slots with capacity
+DB --> Appt : Available slots
+Appt --> Web : [{ time, available,\ncapacityRemaining }]
+
+@enduml

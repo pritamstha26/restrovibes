@@ -1,0 +1,61 @@
+@startuml RestroVibes - Rating System
+!theme plain
+title RestroVibes - Bidirectional Rating System
+
+actor Client
+actor Restaurateur
+participant "Express API" as API
+participant "PostgreSQL" as DB
+
+== CLIENT RATES RESTAURATEUR ==
+
+Client -> API : POST /api/ratings/\n{ appointmentId: 42,\ntargetType: "restaurateur",\nscore: 5,\ncomment: "Great food and service!" }
+API -> DB : Verify appointment exists\nand status = "completed"
+API -> DB : Check unique constraint:\n(clientId, appointmentId, targetType)\nNo duplicate allowed
+API -> DB : INSERT INTO ratings\n(appointmentId, clientId,\ntargetId, targetType,\nscore, comment)
+DB --> API : Rating created
+API -> DB : SELECT AVG(score)\nFROM ratings\nWHERE targetType = "restaurateur"\nAND targetId = restaurateurId
+DB --> API : avg = 4.5, count = 12
+API --> Client : 201 { rating, average: 4.5 }
+
+== RESTAURATEUR RATES CLIENT ==
+
+Restaurateur -> API : POST /api/ratings/\n{ appointmentId: 42,\ntargetType: "client",\nscore: 4,\ncomment: "Good customer" }
+API -> DB : Verify appointment exists\nand status = "completed"
+API -> DB : Check unique constraint:\n(restaurateurId, appointmentId, "client")
+API -> DB : INSERT INTO ratings\n(appointmentId, restaurateurId,\ntargetId, targetType,\nscore, comment)
+DB --> API : Rating created
+API -> DB : SELECT AVG(score)\nFROM ratings\nWHERE targetType = "client"\nAND targetId = clientId
+DB --> API : avg = 4.2, count = 8
+API --> Restaurateur : 201 { rating, average: 4.2 }
+
+== VIEW RATINGS FOR APPOINTMENT ==
+
+Client -> API : GET /api/ratings/appointment/:appointmentId
+API -> DB : SELECT * FROM ratings\nWHERE appointmentId = :id
+DB --> API : [{ targetType: "restaurateur",\nscore: 5 },\n{ targetType: "client",\nscore: 4 }]
+API --> Client : { ratings: [...] }
+
+== GET AVERAGE RATING ==
+
+Client -> API : GET /api/ratings/average/restaurateur/:id
+API -> DB : SELECT AVG(score), COUNT(*)\nFROM ratings\nWHERE targetType = 'restaurateur'\nAND targetId = :id
+DB --> API : { avg: 4.5, count: 12 }
+API --> Client : { average: 4.5, count: 12 }
+
+Restaurateur -> API : GET /api/ratings/average/client/:id
+API -> DB : SELECT AVG(score), COUNT(*)\nFROM ratings\nWHERE targetType = 'client'\nAND targetId = :id
+DB --> API : { avg: 4.2, count: 8 }
+API --> Restaurateur : { average: 4.2, count: 8 }
+
+== CONSTRAINTS ==
+
+note over API,DB
+  - One rating per appointment per direction
+  - Score range: 1-5 stars
+  - Ratings only after appointment completed
+  - Enforced by unique DB constraint on
+    (appointmentId, clientId/targetId, targetType)
+end note
+
+@enduml

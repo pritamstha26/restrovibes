@@ -1,0 +1,95 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam componentFontSize 10
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam nodesep 35
+skinparam ranksep 35
+
+title RestroVibes - Deployment & Infrastructure
+
+node "Docker Host" {
+
+    node "docker-compose.yml" as dc {
+
+        node "restrovibe-client" as clientNode {
+            component "Vite Dev Server\n:5173" as vite {
+                [React SPA Build] as reactBuild
+                [Static Assets\n(HTML, CSS, JS)] as static
+            }
+            component "Client Dockerfile" as cDocker
+        }
+
+        node "restrovibe-server" as serverNode {
+            component "Node.js Runtime" as node {
+                [Express Server\n:5000] as express
+                [Background Workers\n(Overstay, AutoAccept,\nLottery)] as bgWorkers
+                [Sequelize ORM] as orm
+            }
+            component "Server Dockerfile" as sDocker
+            component " uploads/ " as uploads
+        }
+
+        node "restrovibe-db" as dbNode {
+            component "PostgreSQL 14\nAlpine" as pg
+            component "Volume:\npgdata" as pgVol
+        }
+    }
+}
+
+cloud "External Services" as ext {
+    component "OpenStreetMap\n(Tile Server)" as osm
+    component "SMTP Server\n(Email)" as smtp
+    component "Browser\nGeolocation API" as geo
+}
+
+cloud "Client Machine" as machine {
+    component "Web Browser" as browser
+    component "File System\n(uploads/)" as fileSys
+}
+
+' Internal connections
+vite -down-> express : HTTP :5173 -> :5000
+express -down-> orm
+orm -down-> pg : SQL queries
+bgWorkers ..> express : Share process
+bgWorkers ..> orm : Share connection
+
+' Volume mounts
+pg -[hidden]right-> pgVol
+uploads -[hidden]right-> fileSys
+
+' External connections
+browser -down-> vite : Load SPA
+browser -right-> geo : GPS Position
+reactBuild -up-> osm : Map tiles (Leaflet)
+express -right-> smtp : Nodemailer
+express -right-> fileSys : Multer file I/O
+
+' Docker networking
+clientNode -[hidden]right-> serverNode
+serverNode -[hidden]right-> dbNode
+
+note right of clientNode
+  Container 1
+  - Vite dev server
+  - React SPA
+  - Port 5173
+end note
+
+note right of serverNode
+  Container 2
+  - Express API
+  - Background workers
+  - Port 5000
+end note
+
+note right of dbNode
+  Container 3
+  - PostgreSQL 14
+  - Persistent volume
+  - Port 5433 external
+end note
+
+@enduml

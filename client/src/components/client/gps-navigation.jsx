@@ -12,6 +12,7 @@ import {
 } from "react-icons/fa";
 import api from "../../apis/api";
 import { jwtDecode } from "jwt-decode";
+import { usePolling } from "../../hooks/usePolling";
 import "./dashboard.css";
 
 function haversineDistance(lat1, lng1, lat2, lng2) {
@@ -77,10 +78,26 @@ export default function GPSNavigation() {
   const [manualError, setManualError] = useState(null);
   const [locationSource, setLocationSource] = useState("gps");
 
-  const fetchAppointments = async (token, userId) => {
+  const NON_NAVIGABLE_STATUSES = ["cancelled", "completed", "no_show", "rejected"];
+
+  const fetchAppointments = async () => {
     try {
-      const res = await api.get(`/appointments/client/${userId}`, { headers: { Authorization: `Bearer ${token}` } });
-      const apps = (res.data.data || []).filter((a) => a.restaurateur_lat && a.restaurateur_lng);
+      const token = sessionStorage.getItem("access_token");
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+      const decoded = jwtDecode(token);
+      const res = await api.get(`/appointments/client/${decoded.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      const raw = res.data.data || [];
+      const apps = raw
+        .map((g) => (g.items && g.items.length ? g.items[0] : g))
+        .filter(
+          (a) =>
+            a.restaurateur_lat &&
+            a.restaurateur_lng &&
+            !NON_NAVIGABLE_STATUSES.includes(a.status),
+        );
       setAppointments(apps);
     } catch {
       setAppointments([]);
@@ -181,13 +198,15 @@ export default function GPSNavigation() {
       return;
     }
 
-    fetchAppointments(token, decoded.id).then(async () => {
+    fetchAppointments().then(async () => {
       const saved = await fetchSavedLocation(token);
       if (!saved) {
         tryGeolocation();
       }
     });
   }, []);
+
+  usePolling(fetchAppointments, 5000);
 
   if (loading) {
     return (

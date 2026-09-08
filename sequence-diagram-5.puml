@@ -1,0 +1,33 @@
+@startuml RestroVibes Reliability Scoring
+!theme plain
+title RestroVibes - Client Reliability Scoring
+
+participant "Express API" as API
+participant "ScoringEngine" as Score
+participant "PostgreSQL" as DB
+participant "Restaurateur\nDashboard" as RestaurateurUI
+
+== SCORING ALGORITHM ==
+
+API -> Score : calculatePenalty(userId)
+Score -> DB : Fetch BookingHistory for user
+DB --> Score : { no_shows, late_arrivals,\nlate_cancellations, overstays,\ncompleted, total }
+
+Score -> Score : rawPenalty = (noShows x 0.7\n+ lateArrivals x 0.4\n+ lateCancellations x 0.3\n+ overstays x 0.15) / totalBookings
+Score -> Score : completionRatio = completed / total
+Score -> Score : decay = min(completionRatio x 0.15,\nrawPenalty x 0.3)
+Score -> Score : penaltyScore = max(0,\nrawPenalty - decay)
+Score --> API : penaltyScore = 0.23
+
+API -> API : Classify status
+note right of API : 0 - 0.15 -> "reliable"\n0.15 - 0.4 -> "at_risk"\n> 0.4 -> "flagged"
+API -> DB : Update user penalty_score + status
+
+== RESTAURATEUR VIEWS CLIENT RISK ==
+
+RestaurateurUI -> API : GET /api/appointments/:id
+API -> DB : Fetch appointment + client risk data
+API --> RestaurateurUI : { appointment, clientRisk:\n{ status, penaltyScore, history } }
+RestaurateurUI -> RestaurateurUI : Display ClientRiskPopover\n(color-coded risk badge)
+
+@enduml

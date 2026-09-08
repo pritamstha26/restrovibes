@@ -1,0 +1,66 @@
+@startuml RestroVibes - Reliability Scoring
+!theme plain
+title RestroVibes - Client Reliability Scoring Algorithm
+
+participant "Express API" as API
+participant "ScoringEngine" as Score
+participant "PostgreSQL" as DB
+participant "Restaurateur\nDashboard" as RUI
+
+== PENALTY CALCULATION ==
+
+API -> Score : recalculateUserPenalty(userId)
+Score -> DB : SELECT status, COUNT(*)\nFROM booking_history\nWHERE client_id = userId\nGROUP BY status
+DB --> Score : {\n  no_show: 3,\n  late_arrival: 1,\n  late_cancelled: 2,\n  overstayed: 1,\n  completed: 15,\n  total: 22\n}
+
+Score -> Score : rawPenalty = (\n  noShows x 0.7\n  + lateArrivals x 0.4\n  + lateCancellations x 0.3\n  + overstays x 0.15\n) / totalBookings\n= (3x0.7 + 1x0.4 + 2x0.3 + 1x0.15) / 22\n= (2.1 + 0.4 + 0.6 + 0.15) / 22\n= 3.25 / 22\n= 0.148
+
+Score -> Score : completionRatio = completed / total\n= 15 / 22 = 0.682
+
+Score -> Score : decay = min(\n  completionRatio x 0.15,\n  rawPenalty x 0.3\n)\n= min(0.682 x 0.15, 0.148 x 0.3)\n= min(0.102, 0.044)\n= 0.044
+
+Score -> Score : penaltyScore = max(0,\n  rawPenalty - decay)\n= max(0, 0.148 - 0.044)\n= 0.104
+
+Score --> API : penaltyScore = 0.104
+
+== STATUS CLASSIFICATION ==
+
+API -> API : Classify based on thresholds:
+note right of API
+  0.00 - 0.15  -> "reliable"   (green badge)
+  0.15 - 0.40  -> "at_risk"    (yellow badge)
+  > 0.40       -> "flagged"    (red badge)
+end note
+
+API -> API : 0.104 <= 0.15\n=> status = "reliable"
+
+API -> DB : UPDATE users SET\n  penalty_score = 0.104,\n  reliability_status = 'reliable',\n  is_flagged = false,\n  total_no_shows = 3,\n  total_late_cancellations = 2,\n  total_late_arrivals = 1,\n  total_completed_bookings = 15\nWHERE id = userId
+
+== RESTAURATEUR VIEWS CLIENT RISK ==
+
+RUI -> API : GET /api/appointments/:id
+API -> DB : Fetch appointment +\njoined client risk data
+DB --> API : {\n  appointment: { ... },\n  client: {\n    penalty_score: 0.104,\n    reliability_status: "reliable",\n    is_flagged: false,\n    total_no_shows: 3,\n    total_completed: 15\n  }\n}
+API --> RUI : { appointment, clientRisk }
+
+RUI -> RUI : Render ClientRiskPopover:\n  - Color badge (green/yellow/red)\n  - Penalty score percentage\n  - History: 15 completed, 3 no-shows\n  - Status: "Reliable Client"
+
+== RISK PROFILE ENDPOINT ==
+
+RUI -> API : GET /api/appointments/client/:id/risk-profile
+API -> DB : Fetch penalty stats +\nrecent booking history
+DB --> API : {\n  penaltyScore: 0.104,\n  riskLevel: "low",\n  history: [...]\n}
+API -> API : Risk level classification:\n  high: is_flagged or penalty > 0.4\n  medium: penalty > 0.15\n  low: otherwise
+API --> RUI : { riskLevel: "low", penaltyScore, history }
+
+== ADMIN: BACKFILL ALL PENALTIES ==
+
+RUI -> API : POST /api/appointments/admin/backfill-penalties
+API -> DB : SELECT * FROM users\nWHERE role = 'client'
+DB --> API : All clients
+loop For each client
+    API -> API : recalculateUserPenalty(client.id)
+end
+API --> RUI : 200 All penalties recalculated
+
+@enduml

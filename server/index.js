@@ -87,30 +87,10 @@ const addPostgresEnumValue = async (enumType, value) => {
 };
 
 // Middleware
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
-// Allow the default Vite port and a common fallback (5174) used when 5173 is occupied
-const allowedOrigins = [
-  FRONTEND_URL,
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://localhost:5175",
-  "http://127.0.0.1:5173",
-  "http://127.0.0.1:5174",
-  "http://127.0.0.1:5175",
-];
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // allow requests with no origin (like mobile apps or curl)
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.indexOf(origin) !== -1) {
-        return callback(null, true);
-      } else {
-        const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
-        return callback(new Error(msg), false);
-      }
-    },
+    origin: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
@@ -175,6 +155,14 @@ app.listen(PORT, () => {
     await addColumnIfMissing("AppointmentModels", "is_late", {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
+    });
+    await addColumnIfMissing("AppointmentModels", "quantity", {
+      type: DataTypes.INTEGER,
+      defaultValue: 1,
+    });
+    await addColumnIfMissing("AppointmentModels", "booking_group_id", {
+      type: DataTypes.STRING,
+      allowNull: true,
     });
     await addColumnIfMissing("UsersModels", "total_late_arrivals", {
       type: DataTypes.INTEGER,

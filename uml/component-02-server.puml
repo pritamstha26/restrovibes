@@ -1,0 +1,128 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam componentFontSize 10
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam nodesep 40
+skinparam ranksep 40
+
+title RestroVibes - Server-Side Component Diagram
+
+package "Express Server (Node.js)" {
+
+    package "Middleware Layer" as mw {
+        [authenticateToken\n(JWT Verification)] as authMw
+        [Multer Upload\n(File Processing)] as uploadMw
+        [Role Check\n(Inline RBAC)] as roleMw
+    }
+
+    package "Controller Layer" as ctrl {
+        [AuthController\n(register, login,\nrefresh, reset)] as authCtrl
+        [AppointmentController\n(CRUD, confirm, cancel,\narrived, complete, extend)] as apptCtrl
+        [LocationController\n(nearby, update,\ndistance)] as locCtrl
+        [TableController\n(CRUD, availability)] as tableCtrl
+        [ServiceController\n(restaurateur services)] as svcCtrl
+        [RatingController\n(bidirectional ratings)] as rateCtrl
+        [UserController\n(profile, capacity,\ndelete)] as userCtrl
+        [UploadController\n(image upload/delete)] as uploadCtrl
+    }
+
+    package "Background Workers" as workers {
+        [Overstay Worker\n(every 60s)] as overstayW
+        [Auto-Accept Worker\n(every 2 min)] as autoW
+        [Lottery Scheduler\n(every 60s)] as lottoW
+    }
+
+    package "Utility Layer" as util {
+        [ScoringEngine\n(penalty calculation)] as scoring
+        [WeightedLottery\n(random selection)] as lottery
+        [Haversine Distance\n(GPS calculation)] as haversine
+        [Email Service\n(Nodemailer)] as email
+        [JWT Utilities\n(token generation)] as jwtUtil
+        [Password Hasher\n(bcrypt)] as hasher
+    }
+
+    package "Model Layer (Sequelize ORM)" as models {
+        [UsersModel\n(clients, restaurateurs,\nadmins)] as userModel
+        [AppointmentModels\n(status lifecycle)] as apptModel
+        [BookingHistoryModels\n(penalty records)] as histModel
+        [LotteryPoolModels\n(lottery entries)] as lottoModel
+        [RestaurateurServices\n(name, price, duration)] as svcModel
+        [Tables\n(capacity, images)] as tableModel
+        [Ratings\n(bidirectional)] as ratingModel
+    }
+
+    package "Route Definitions" as routes {
+        [authRoutes\n(/api/auth/*)] as authR
+        [appointmentRoutes\n(/api/appointments/*)] as apptR
+        [locationRoutes\n(/api/location/*)] as locR
+        [tableRoutes\n(/api/tables/*)] as tableR
+        [serviceRoutes\n(/api/services/*)] as svcR
+        [restaurateurServiceRoutes\n(/api/restaurateurs-services/*)] as rSvcR
+        [ratingRoutes\n(/api/ratings/*)] as rateR
+        [lotteryRoutes\n(/api/lottery/*)] as lottoR
+        [uploadRoutes\n(/api/uploads/*)] as uploadR
+        [userRoutes\n(/api/users/*)] as userR
+    }
+}
+
+database "PostgreSQL" as db
+
+' Route -> Controller mappings
+authR -down-> authCtrl
+apptR -down-> apptCtrl
+locR -down-> locCtrl
+tableR -down-> tableCtrl
+svcR -down-> svcCtrl
+rSvcR -down-> svcCtrl
+rateR -down-> rateCtrl
+lottoR -down-> apptCtrl
+uploadR -down-> uploadCtrl
+userR -down-> userCtrl
+
+' Middleware connections
+authR ..> authMw
+tableR ..> authMw
+lottoR ..> authMw
+uploadR ..> uploadMw
+
+' Controller -> Model connections
+authCtrl -down-> userModel
+apptCtrl -down-> apptModel
+apptCtrl -down-> histModel
+locCtrl -down-> userModel
+tableCtrl -down-> tableModel
+svcCtrl -down-> svcModel
+rateCtrl -down-> ratingModel
+userCtrl -down-> userModel
+uploadCtrl -down-> tableModel
+
+' Controller -> Utility connections
+authCtrl ..> jwtUtil
+authCtrl ..> hasher
+authCtrl ..> email
+apptCtrl ..> scoring
+locCtrl ..> haversine
+rateCtrl ..> scoring
+
+' Worker connections
+autoW -down-> apptModel
+autoW -down-> scoring
+overstayW -down-> apptModel
+overstayW -down-> histModel
+overstayW -down-> scoring
+lottoW -down-> lottoModel
+lottoW -down-> apptModel
+lottoW ..> lottery
+
+' Model -> DB
+ userModel -down-> db
+apptModel -down-> db
+histModel -down-> db
+lottoModel -down-> db
+svcModel -down-> db
+tableModel -down-> db
+ratingModel -down-> db
+
+@enduml

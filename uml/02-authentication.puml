@@ -1,0 +1,86 @@
+@startuml RestroVibes - Authentication Flow
+!theme plain
+title RestroVibes - Authentication & Session Management
+
+actor User
+participant "Frontend\n(React SPA)" as FE
+participant "Express API" as API
+participant "Auth Middleware" as Auth
+participant "PostgreSQL" as DB
+participant "Nodemailer" as Mail
+
+== REGISTRATION ==
+
+User -> FE : Fill sign-up form\n(name, email, password, phone, role)
+FE -> API : POST /api/auth/register
+API -> API : Validate allowed roles:\n["client", "restaurateurs"]
+API -> API : Hash password (bcrypt, 10 rounds)
+API -> DB : UsersModel.create({ ... })
+DB --> API : User created (id, role)
+API -> API : Generate JWT access token (1h)\n+ refresh token (7d)
+API --> FE : 201 { user, accessToken, refreshToken }
+FE -> FE : Store tokens in sessionStorage
+
+== LOGIN ==
+
+User -> FE : Enter email + password + role
+FE -> API : POST /api/auth/login\n{ email, password, role }
+API -> DB : findOne({ email, role })
+DB --> API : User found
+API -> API : bcrypt.compare(password, hash)
+API -> API : Generate JWT access (1h) + refresh (7d)
+API --> FE : { accessToken, refreshToken, user }
+FE -> FE : Store in sessionStorage\n+ redirect to role-specific dashboard
+
+== TOKEN REFRESH (Auto-Intercepted) ==
+
+FE -> API : Any request with expired access token
+API --> FE : 401 Unauthorized
+FE -> FE : Axios interceptor catches 401
+FE -> API : POST /api/auth/refresh-token\n{ refreshToken }
+API -> DB : Validate refresh token exists + not expired
+DB --> API : Valid
+API -> API : Generate new access + refresh tokens
+API -> DB : Update refresh token in DB
+API --> FE : { accessToken, refreshToken }
+FE -> FE : Update sessionStorage
+FE -> API : Retry original request with new token
+API --> FE : 200 { data }
+
+== LOGOUT ==
+
+User -> FE : Click logout
+FE -> API : POST /api/auth/logout\n{ refreshToken }
+API -> DB : Delete/invalidate refresh token
+API --> FE : 200 Logged out
+FE -> FE : Clear sessionStorage\n+ redirect to login
+
+== FORGOT PASSWORD ==
+
+User -> FE : Enter email
+FE -> API : POST /api/auth/forgot-password\n{ email }
+API -> DB : Find user by email
+API -> API : crypto.randomBytes(32) -> 64-char hex token
+API -> API : Set expiry: now + 10 minutes
+API -> DB : Store reset_token + reset_token_expiry
+API -> Mail : sendPasswordReset(email, token)
+note right of Mail : Dev mode: log to console\nProd mode: SMTP email\nwith reset link
+Mail --> User : Email with reset link\n{FRONTEND_URL}/reset-password?token=...
+API --> FE : 200 "If email exists, reset link sent"\n(prevents user enumeration)
+
+== RESET PASSWORD ==
+
+User -> FE : Click link -> Enter new password
+FE -> API : POST /api/auth/reset-password\n{ token, password }
+API -> DB : Find user where\ reset_token = token\nAND reset_token_expiry > NOW()
+DB --> API : User found (token valid)
+API -> API : Validate password >= 8 chars
+API -> API : Hash new password (bcrypt)
+API -> DB : Update password +\nclear reset_token & expiry
+API --> FE : 200 Password reset successful
+
+== RATE LIMITING (Forgot Password) ==
+
+note over API,DB : In-memory Map tracks last request time per email\nProduction: 60-second cooldown between requests\nDev mode: cooldown skipped
+
+@enduml

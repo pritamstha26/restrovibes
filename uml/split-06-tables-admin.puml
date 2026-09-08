@@ -1,0 +1,122 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 180
+
+title RestroVibes - Table Management & Admin Operations
+
+actor Restaurateur
+actor Admin
+participant "Web Interface" as Web
+participant "TableController" as Table
+participant "AppointmentController" as Appt
+participant "ScoringEngine" as Score
+participant "Database" as DB
+participant "FileSystem" as FS
+
+== Create Table ==
+
+Restaurateur -> Web : Add table
+Web -> Table : POST /api/tables\n{ restaurateurId, table_number, capacity }
+Table -> Table : Verify role + ownership
+Table -> DB : Check unique constraint
+Table -> DB : INSERT INTO tables\n(is_active=true, images=[])
+DB --> Table : Created
+Table --> Web : 201 { table }
+
+== Upload Table Images ==
+
+Restaurateur -> Web : Select images (max 10)
+Web -> Table : POST /api/uploads/tables/:id/images\nmultipart/form-data
+Table -> Table : Multer: validate types\n(jpeg, jpg, png, webp)\nMax 5MB per file
+Table -> FS : Save to uploads/\n{timestamp}-{random}.{ext}
+FS --> Table : Saved
+Table -> DB : UPDATE images array
+DB --> Table : Updated
+Table --> Web : 200 { images }
+
+== Delete Table Image ==
+
+Restaurateur -> Web : Remove image
+Web -> Table : DELETE /api/uploads/tables/:id/images/:filename
+Table -> DB : Filter images array
+Table -> FS : fs.unlinkSync(filename)
+FS --> Table : Deleted
+Table -> DB : UPDATE images
+Table --> Web : 200 Done
+
+== Update Table ==
+
+Restaurateur -> Web : Edit table
+Web -> Table : PUT /api/tables/:id\n{ table_number, capacity, is_active }
+Table -> Table : Ownership check
+Table -> DB : UPDATE table fields
+Table --> Web : 200 Updated
+
+== Delete Table ==
+
+Restaurateur -> Web : Delete table
+Web -> Table : DELETE /api/tables/:id
+Table -> Table : Ownership check
+Table -> DB : DELETE FROM tables
+Table --> Web : 200 Deleted
+
+== View Restaurant Tables ==
+
+Restaurateur -> Web : View my tables
+Web -> Table : GET /api/tables/restaurant/:id
+Table -> DB : SELECT WHERE restaurateur_id\nORDER BY table_number
+DB --> Table : Table list
+Table --> Web : [{ table_number, capacity,\nimages, is_active }]
+
+== Admin: Create User (Any Role) ==
+
+Admin -> Web : Create user
+Web -> Appt : POST /api/auth/register\n(Authorization: Bearer <admin>)
+Appt -> Appt : Verify admin role\nAllowed: ["client","restaurateurs","admin"]
+Appt -> DB : Create user with role
+Appt --> Web : 201 { user info }
+
+== Admin: Delete User ==
+
+Admin -> Web : Delete user
+Web -> Appt : DELETE /api/users/delete/:id
+Appt -> DB : Verify target not admin
+Appt -> DB : UPDATE related appointments\n-> "cancelled"
+Appt -> DB : DELETE FROM users
+Appt --> Web : 200 Deleted
+
+== Admin: Cancel Any Appointment ==
+
+Admin -> Web : Cancel appointment
+Web -> Appt : PUT /api/appointments/:id/cancel
+Appt -> Appt : Admin bypass: no ownership check
+Appt -> DB : UPDATE status -> "cancelled"
+Appt --> Web : 200 Cancelled
+
+== Admin: Manual Lottery Resolve ==
+
+Admin -> Web : Resolve contested slot
+Web -> Appt : POST /api/lottery/resolve\n{ restaurantId, date, timeSlot }
+Appt -> Appt : Admin-only middleware
+Appt -> DB : Fetch lottery entries
+Appt -> Appt : Weighted random select
+Appt -> DB : Winner -> accepted\nLosers -> cancelled
+Appt --> Web : 200 Resolved
+
+== Admin: Backfill Penalties ==
+
+Admin -> Web : Recalculate all scores
+Web -> Appt : POST /api/appointments/admin/backfill-penalties
+Appt -> DB : SELECT clients
+loop Per client
+    Appt -> Score : recalculatePenalty(id)
+    Score -> DB : Fetch + update
+end
+Appt --> Web : 200 All recalculated
+
+@enduml

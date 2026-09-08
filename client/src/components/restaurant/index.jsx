@@ -1081,12 +1081,15 @@ import {
   FaCog,
   FaSignOutAlt,
   FaChair,
+  FaUsers,
 } from "react-icons/fa";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./restaurant.css";
 import api from "../../apis/api";
+import { usePolling } from "../../hooks/usePolling";
 import DashboardTab from "./tabs/DashboardTab";
 import AppointmentsTab from "./tabs/AppointmentsTab";
+import ClientHistoryTab from "./tabs/ClientHistoryTab";
 import ServicesTab from "./tabs/ServicesTab";
 import SettingsTab from "./tabs/SettingsTab";
 import TablesTab from "./tabs/TablesTab";
@@ -1197,11 +1200,11 @@ export default function RestaurantDashboard() {
     }
   }, [getAuthTokenAndId]);
 
-  const fetchAppointments = useCallback(async () => {
+  const fetchAppointments = useCallback(async (silent = false) => {
     const { token, id } = getAuthTokenAndId();
     if (!token) return;
     try {
-      setIsLoading(true);
+      if (!silent) setIsLoading(true);
       const response = await api.get(`/appointments/restaurateurs/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -1211,7 +1214,7 @@ export default function RestaurantDashboard() {
     } catch (error) {
       console.error("Error loading scheduling queues:", error);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, [getAuthTokenAndId]);
 
@@ -1220,6 +1223,8 @@ export default function RestaurantDashboard() {
     getServices();
     fetchAppointments();
   }, [fetchAppointments, fetchProfile, getServices]);
+
+  usePolling(() => fetchAppointments(true), 5000);
 
   // Sync profile details when loaded
   useEffect(() => {
@@ -1425,6 +1430,14 @@ export default function RestaurantDashboard() {
     <TablesTab restaurateurId={restaurateurInfo?.id} />
   );
 
+  const renderClientHistory = () => (
+    <ClientHistoryTab
+      appointments={appointments}
+      isLoading={isLoading}
+      onSync={fetchAppointments}
+    />
+  );
+
   return (
     <div className="d-flex structural-dashboard-container">
       {/* Absolute Dynamic Global Toast Notification */}
@@ -1448,6 +1461,7 @@ export default function RestaurantDashboard() {
               { id: "appointments", label: "Bookings Registry", icon: FaCalendarAlt, badge: appointments.filter(a => a.status === "pending").length },
               { id: "services", label: "Service Tiers", icon: FaCut },
               { id: "tables", label: "Tables & Views", icon: FaChair },
+              { id: "clients", label: "Client History", icon: FaUsers },
               { id: "settings", label: "Workspace Config", icon: FaCog },
             ].map((tab) => (
               <Nav.Link
@@ -1484,6 +1498,7 @@ export default function RestaurantDashboard() {
           {activeTab === "appointments" && renderAppointments()}
           {activeTab === "services" && renderServices()}
           {activeTab === "tables" && renderTables()}
+          {activeTab === "clients" && renderClientHistory()}
           {activeTab === "settings" && renderSettings()}
         </Container>
       </div>

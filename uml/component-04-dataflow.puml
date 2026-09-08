@@ -1,0 +1,90 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam componentFontSize 10
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam nodesep 50
+skinparam ranksep 40
+
+title RestroVibes - Data Flow & Component Interactions
+
+package "Frontend (React)" as fe {
+    [Axios HTTP Client] as axios
+    [Dynamic Pricing] as dynPrice
+    [Leaflet Map] as leaflet
+    [usePolling Hook] as polling
+}
+
+package "Backend (Express)" as be {
+    package "Controllers" as ctrl {
+        [Auth] as ac
+        [Appointment] as apc
+        [Location] as lc
+        [Table] as tc
+        [Service] as sc
+        [Rating] as rc
+    }
+
+    package "Workers" as wk {
+        [Overstay] as ow
+        [Auto-Accept] as aaw
+        [Lottery] as lw
+    }
+
+    package "Engine" as eng {
+        [Scoring] as se
+        [Lottery Select] as ls
+        [Haversine] as hv
+    }
+}
+
+database "PostgreSQL" as db
+queue "Email" as email
+storage "File System" as fs
+
+' === Auth Flow ===
+axios -down-> ac : POST /auth/register\nPOST /auth/login\nPOST /auth/refresh
+ac -down-> db : Users CRUD
+ac -right-> email : Password reset
+
+' === Discovery Flow ===
+axios -down-> lc : GET /location/nearby
+leaflet -down-> lc : GPS coordinates
+lc -down-> db : Query restaurateurs
+lc ..> hv : Distance calc
+
+' === Booking Flow ===
+axios -down-> apc : POST /appointments\nPUT /appointments/:id/*
+apc -down-> db : Appointments CRUD
+apc ..> se : Weight calc
+apc ..> ls : Lottery entry
+
+' === Worker Flows ===
+ow ..> db : Find past-due
+ow ..> se : Update penalties
+aaw ..> db : Auto-accept solo
+lw ..> db : Resolve contested
+lw ..> ls : Pick winner
+
+' === Service Flow ===
+axios -down-> sc : CRUD services
+sc -down-> db : Services CRUD
+
+' === Table Flow ===
+axios -down-> tc : CRUD tables
+tc -down-> db : Tables CRUD
+tc -right-> fs : Image upload/delete
+
+' === Rating Flow ===
+axios -down-> rc : POST /ratings
+rc -down-> db : Ratings CRUD
+rc ..> se : Update scores
+
+' === Dynamic Pricing (Client-Side) ===
+dynPrice ..> apc : Fetch demand data
+
+' === Real-Time Updates ===
+polling ..> apc : Poll appointments
+
+@enduml

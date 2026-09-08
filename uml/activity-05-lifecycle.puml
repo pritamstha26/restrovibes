@@ -1,0 +1,152 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam activityFontSize 12
+skinparam arrowFontSize 10
+
+title RestroVibes - Appointment Lifecycle Management
+
+|Restaurateur|
+start
+:View pending bookings;
+:See client risk badges;
+
+:Accept booking;
+
+|Web Interface|
+:Send PUT /api/appointments/:id/confirm;
+
+|AppointmentController|
+:Verify restaurateur owns appointment;
+:Update status -> "accepted";
+
+|Database|
+:Store updated status;
+
+|Restaurateur|
+:Client arrives;
+
+|Web Interface|
+:Send PUT /api/appointments/:id/arrived;
+
+|AppointmentController|
+:Fetch scheduledTime;
+:Calculate: diffMinutes =\n(now - scheduledTime) / 60000;
+
+if (Client > 15 min late?) then (yes)
+    :Mark is_late = true;
+    :Create BookingHistory\n(status = "late_arrival");
+
+    |ScoringEngine|
+    :Recalculate penalty;
+    :penalty += lateArrivals x 0.4;
+
+    |AppointmentController|
+    :Update user penalty fields;
+else (no)
+    :Record actual_arrival_time;
+endif
+
+:Update status -> "in_progress";
+
+|Restaurateur|
+:Service completed;
+
+|Web Interface|
+:Send PUT /api/appointments/:id/complete;
+
+|AppointmentController|
+:Update status -> "completed";
+:Create BookingHistory\n(status = "completed");
+
+|ScoringEngine|
+:Recalculate penalty\n(completion bonus applied);
+
+|AppointmentController|
+:Update user penalty fields;
+
+|Restaurateur|
+:Mark client rating;
+
+|Web Interface|
+:Send POST /api/ratings/\n{ score, comment };
+
+|RatingController|
+:Verify appointment completed;
+:Check unique constraint;
+:Insert rating;
+:Calculate new average;
+
+|Restaurateur|
+stop
+
+' ============================
+' CLIENT CANCELLATION
+' ============================
+
+|Client|
+start
+:Open my appointments;
+:Select appointment to cancel;
+
+|Web Interface|
+:Send PUT /api/appointments/:id/cancel;
+
+|AppointmentController|
+:Verify client owns appointment;
+:Update status -> "cancelled";
+
+|Database|
+:Store updated status;
+
+|Web Interface|
+:Show cancellation confirmation;
+
+|Client|
+:Receive confirmation;
+
+stop
+
+' ============================
+' CLIENT EXTENSION REQUEST
+' ============================
+
+|Client|
+start
+:Request time extension\n(extra_minutes: 30);
+
+|Web Interface|
+:Send POST /api/appointments/:id/extend\n{ extra_minutes: 30 };
+
+|AppointmentController|
+:Verify client owns appointment;
+:Verify status allows extension\n(pending, accepted, in_progress);
+:Calculate new end time\n= (extended_until || end_time)\n+ extra_minutes x 60000;
+
+:Begin SERIALIZABLE transaction;
+
+:Calculate seats needed\nfor extension window\n[currentEnd, newEnd);
+
+|Database|
+:SUM(party_size) overlapping\nin extension window;
+
+|AppointmentController|
+if (Capacity OK for extension?) then (yes)
+    :Update end_time;
+    :Update extended_until;
+    :Set extension_status = "accepted";
+    :Commit transaction;
+
+    |Web Interface|
+    :Show extension success;
+
+    |Client|
+    :Continue with extended time;
+else (no)
+    :Rollback transaction;
+    |Web Interface|
+    :Show "Not enough capacity";
+endif
+
+stop

@@ -1,0 +1,114 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam activityFontSize 12
+skinparam arrowFontSize 10
+
+title RestroVibes - Table Management & Image Upload
+
+|Restaurateur|
+start
+:Open table management;
+
+:Click "Add Table";
+
+:Enter table number + capacity;
+
+|Web Interface|
+:Send POST /api/tables\n{ restaurateurId, table_number, capacity };
+
+|TableController|
+:Verify role = restaurateur or admin;
+:Verify ownership (if restaurateur);
+
+:Check unique constraint\n(restaurateur_id, table_number);
+
+if (Duplicate?) then (yes)
+    :Return 409 "Table number exists";
+    |Restaurateur|
+    :Choose different number;
+    stop
+else (no)
+endif
+
+:Create table record:\nis_active = true\nimages = [];
+
+|Database|
+:Store table;
+
+|Web Interface|
+:Show table created;
+
+|Restaurateur|
+:Select table to upload images;
+:Click "Upload Images";
+:Select files (max 10);
+
+|Web Interface|
+:Send POST /api/uploads/tables/:id/images\nmultipart/form-data;
+
+|TableController|
+:Multer middleware processes files;
+
+:For each file;
+
+    :Validate file type\n(jpeg, jpg, png, webp);
+
+    if (Valid type?) then (no)
+        :Reject file;
+    else (yes)
+        :Validate file size\n(max 5MB);
+
+        if (Under 5MB?) then (no)
+            :Reject file;
+        else (yes)
+            :Save to uploads/\n{timestamp}-{random}.{ext};
+            :Add path to images array;
+        endif
+    endif
+
+:Next file;
+
+:Update table images in DB;
+
+|Database|
+:Store updated images array;
+
+|Web Interface|
+:Show uploaded images;
+
+|Restaurateur|
+:Select image to delete;
+
+|Web Interface|
+:Send DELETE /api/uploads/tables/:id/images/:filename;
+
+|TableController|
+:Find table by ID;
+:Filter images array\n(remove matching path);
+:Delete physical file\nfs.unlinkSync(filename);
+
+|Database|
+:Update images array;
+
+|Web Interface|
+:Show image removed;
+
+|Restaurateur|
+:Manage table settings\n(name, capacity, active status);
+
+|Web Interface|
+:Send PUT /api/tables/:id\n{ table_number, capacity, is_active };
+
+|TableController|
+:Verify ownership;
+:Update table fields;
+
+|Database|
+:Store updated table;
+
+|Web Interface|
+:Show updated table;
+
+stop

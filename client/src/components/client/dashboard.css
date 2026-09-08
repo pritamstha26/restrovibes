@@ -177,6 +177,23 @@
   font-weight: 500;
 }
 
+.v-service-line {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  line-height: 1.45;
+}
+
+.v-service-qty {
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--geist-secondary, #888);
+  background: rgba(127, 127, 127, 0.12);
+  border-radius: 999px;
+  padding: 0 0.4rem;
+  white-space: nowrap;
+}
+
 .v-cell-mono {
   font-family: 'Geist Mono', monospace;
   font-size: 0.82rem !important;
@@ -2438,6 +2455,26 @@
   margin-top: 0.2rem;
 }
 
+.nr-rating-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-family: "Geist Mono", monospace;
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fef08a;
+  padding: 0.15rem 0.45rem;
+  border-radius: 99px;
+  margin-top: 0.2rem;
+}
+
+.nr-rating-count {
+  color: #a16207;
+  font-size: 0.6rem;
+}
+
 /* ── Card Body ───────────────────────────────────────────── */
 .nr-card-body {
   padding: 0.85rem 1rem;
@@ -2904,6 +2941,123 @@
 .bk-service-check {
   color: #4f46e5;
   font-size: 1rem;
+}
+
+.bk-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1.5px solid #4f46e5;
+  background: #4f46e5;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.bk-add-btn:hover {
+  background: #4338ca;
+  border-color: #4338ca;
+}
+
+.bk-cart-qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.bk-qty-btn {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #e2e8f0;
+  background: #fff;
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bk-qty-btn:hover {
+  border-color: #4f46e5;
+  color: #4f46e5;
+}
+
+.bk-qty-value {
+  min-width: 1.3rem;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.bk-qty-remove {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #ef4444;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.bk-qty-remove:hover {
+  color: #b91c1c;
+}
+
+.bk-order-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.bk-order-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.bk-order-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.bk-order-qty {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.bk-order-price {
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.bk-order-clear {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: #ef4444;
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0;
+  cursor: pointer;
+}
+
+.bk-order-clear:hover {
+  text-decoration: underline;
 }
 
 /* ── Sidebar / Summary Card ────────────────────────────────── */

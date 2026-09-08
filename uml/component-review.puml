@@ -1,0 +1,298 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam componentStyle uml2
+skinparam componentFontSize 10
+skinparam defaultTextAlignment center
+skinparam packageFontSize 11
+skinparam nodesep 30
+skinparam ranksep 25
+skinparam arrowFontSize 9
+skinparam noteFontSize 9
+
+title Component Diagram - RestroVibes Restaurant Appointment System
+
+' ============================================================
+' FRONTEND TIER
+' ============================================================
+package "Frontend Tier\n(React SPA - Vite :5173)" as frontend {
+
+    package "Client Portal" as clientPortal {
+        [Client Dashboard] as cDash
+        [Nearby Restaurants\n(Leaflet Map)] as nearby
+        [Restaurant Profile] as rProfile
+        [Booking Form] as bookForm
+        [GPS Navigation] as gpsNav
+        [Client Settings] as cSett
+    }
+
+    package "Restaurateur Portal" as restPortal {
+        [Dashboard Tabs] as rDash
+        [Appointments Tab] as apptTab
+        [Services Tab] as svcTab
+        [Tables Tab] as tableTab
+        [Client History\n(Risk Popover)] as histTab
+    }
+
+    package "Admin Panel" as adminPanel {
+        [Admin Dashboard] as aDash
+        [User Management] as aUser
+        [Booking Overview] as aBook
+    }
+
+    package "API Layer" as apiLayer {
+        [Axios Instance\n(baseURL :5000)] as axios
+        [Request Interceptor\n(JWT Injection)] as reqInt
+        [Response Interceptor\n(401 Token Refresh)] as resInt
+    }
+
+    package "Hooks & Utilities" as hooksUtils {
+        [usePolling\n(5s refresh)] as poll
+        [useLottery] as uLottery
+        [Dynamic Pricing\n(Surge Calculation)] as dynP
+        [Route Algorithms] as routeA
+        [Geocode] as geocode
+    }
+
+    package "Shared Components" as shared {
+        [StarRating] as star
+        [ErrorBoundary] as errBound
+    }
+}
+
+' ============================================================
+' SERVER TIER
+' ============================================================
+package "Server Tier\n(Express :5000 - Node.js)" as server {
+
+    package "Route Layer" as routes {
+        [authRoutes\n(/api/auth/*)] as aR
+        [appointmentRoutes\n(/api/appointments/*)] as apR
+        [locationRoutes\n(/api/location/*)] as lR
+        [tableRoutes\n(/api/tables/*)] as tR
+        [serviceRoutes\n(/api/services/*)] as sR
+        [ratingRoutes\n(/api/ratings/*)] as raR
+        [lotteryRoutes\n(/api/lottery/*)] as loR
+        [uploadRoutes\n(/api/uploads/*)] as uR
+        [userRoutes\n(/api/users/*)] as usR
+    }
+
+    package "Middleware" as middleware {
+        [authenticateToken\n(JWT Verification)] as authMw
+        [Multer Upload\n(File Processing)] as mulMw
+    }
+
+    package "Controller Layer" as controllers {
+        [AuthController\n(register, login,\nrefresh, reset)] as aCtrl
+        [AppointmentController\n(CRUD, confirm, cancel,\narrived, complete, extend)] as apCtrl
+        [LocationController\n(nearby, update,\ndistance)] as lCtrl
+        [TableController\n(CRUD, availability)] as tCtrl
+        [ServiceController\n(restaurateur services)] as sCtrl
+        [RatingController\n(bidirectional ratings)] as raCtrl
+        [UserController\n(profile, capacity,\ndelete)] as usCtrl
+        [UploadController\n(image upload/delete)] as uCtrl
+    }
+
+    package "Background Workers" as workers {
+        [Overstay Worker\n(every 60s)] as ow
+        [Auto-Accept Worker\n(every 2 min)] as aaw
+        [Lottery Scheduler\n(every 60s)] as lsw
+    }
+
+    package "Engine & Utilities" as engine {
+        [ScoringEngine\n(penalty calculation)] as score
+        [WeightedLottery\n(weighted random)] as wLottery
+        [Haversine Distance\n(GPS calculation)] as haversine
+        [JWT Utilities\n(token generate/verify)] as jwtU
+        [Bcrypt Hasher\n(password hashing)] as bcrypt
+        [Nodemailer\n(email sending)] as nodemail
+    }
+
+    package "Model Layer\n(Sequelize ORM)" as models {
+        [UsersModel\n(clients, restaurateurs,\nadmins)] as uMod
+        [AppointmentModels\n(status lifecycle)] as apMod
+        [BookingHistoryModels\n(penalty records)] as bhMod
+        [LotteryPoolModels\n(lottery entries)] as lpMod
+        [RestaurateurServices\n(name, price, duration)] as rsMod
+        [TablesModel\n(capacity, images)] as tMod
+        [RatingsModel\n(bidirectional)] as raMod
+    }
+}
+
+' ============================================================
+' DATA TIER
+' ============================================================
+database "PostgreSQL 14\n(:5433)" as db
+storage "File System\n(uploads/)" as fs
+queue "Email Service\n(SMTP / Nodemailer)" as emailSvc
+
+' ============================================================
+' EXTERNAL SERVICES
+' ============================================================
+cloud "External Services" as external {
+    [OpenStreetMap\n(Tile Server)] as osm
+    [Browser Geolocation\nAPI] as geoApi
+}
+
+' ============================================================
+' FRONTEND INTERNAL CONNECTIONS
+' ============================================================
+
+' Client Portal -> API Layer
+nearby --> axios
+bookForm --> axios
+rProfile --> axios
+gpsNav --> axios
+cSett --> axios
+
+' Restaurateur Portal -> API Layer
+apptTab --> axios
+svcTab --> axios
+tableTab --> axios
+histTab --> axios
+rDash --> axios
+
+' Admin Panel -> API Layer
+aDash --> axios
+aUser --> axios
+aBook --> axios
+
+' Hooks/Utils connections
+nearby --> poll
+apptTab --> poll
+nearby --> dynP
+bookForm --> dynP
+gpsNav --> routeA
+nearby --> geocode
+
+' External connections from Frontend
+nearby --> osm : Map tiles
+gpsNav --> geoApi : GPS position
+
+' ============================================================
+' FRONTEND -> SERVER CONNECTIONS
+' ============================================================
+
+axios -down-> aR : HTTP/REST\nAuthorization: Bearer <token>
+axios -down-> apR
+axios -down-> lR
+axios -down-> tR
+axios -down-> sR
+axios -down-> raR
+axios -down-> loR
+axios -down-> uR
+axios -down-> usR
+
+' ============================================================
+' SERVER: ROUTES -> MIDDLEWARE -> CONTROLLERS
+' ============================================================
+
+' Routes -> Middleware
+aR ..> authMw
+apR ..> authMw
+lR ..> authMw
+tR ..> authMw
+sR ..> authMw
+raR ..> authMw
+loR ..> authMw
+usR ..> authMw
+uR ..> mulMw
+
+' Routes -> Controllers
+aR -down-> aCtrl
+apR -down-> apCtrl
+lR -down-> lCtrl
+tR -down-> tCtrl
+sR -down-> sCtrl
+raR -down-> raCtrl
+loR -down-> apCtrl
+uR -down-> uCtrl
+usR -down-> usCtrl
+
+' ============================================================
+' SERVER: CONTROLLERS -> MODELS + ENGINE
+' ============================================================
+
+' Controllers -> Models
+aCtrl -down-> uMod
+apCtrl -down-> apMod
+apCtrl -down-> bhMod
+lCtrl -down-> uMod
+tCtrl -down-> tMod
+sCtrl -down-> rsMod
+raCtrl -down-> raMod
+usCtrl -down-> uMod
+uCtrl -down-> tMod
+
+' Controllers -> Engine
+aCtrl ..> jwtU
+aCtrl ..> bcrypt
+aCtrl ..> nodemail
+apCtrl ..> score
+lCtrl ..-> haversine
+raCtrl ..> score
+
+' ============================================================
+' SERVER: WORKERS -> MODELS + ENGINE
+' ============================================================
+
+ow -down-> apMod
+ow -down-> bhMod
+ow ..> score
+
+aaw -down-> apMod
+
+lsw -down-> lpMod
+lsw -down-> apMod
+lsw ..> wLottery
+
+' ============================================================
+' SERVER: MODELS -> DATABASE
+' ============================================================
+
+uMod -down-> db
+apMod -down-> db
+bhMod -down-> db
+lpMod -down-> db
+rsMod -down-> db
+tMod -down-> db
+raMod -down-> db
+
+' ============================================================
+' SERVER: UPLOAD -> FILE SYSTEM
+' ============================================================
+
+uCtrl -right-> fs : Image I/O
+
+' ============================================================
+' SERVER: EMAIL -> EXTERNAL
+' ============================================================
+
+nodemail -right-> emailSvc : SMTP
+
+' ============================================================
+' NOTES
+' ============================================================
+
+note bottom of frontend
+  **Port 5173**
+  React SPA with role-based portals
+  (Client, Restaurateur, Admin)
+end note
+
+note bottom of server
+  **Port 5000**
+  Express API with JWT auth,
+  3 background workers,
+  Sequelize ORM
+end note
+
+note bottom of db
+  **Port 5433 (external)**
+  Persistent volume (pgdata)
+end note
+
+caption Figure: Component Diagram of RestroVibes Restaurant Appointment System
+@enduml

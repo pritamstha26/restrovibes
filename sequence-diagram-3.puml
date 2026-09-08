@@ -1,0 +1,67 @@
+@startuml RestroVibes Booking Flow
+!theme plain
+title RestroVibes - Booking Flow (With Lottery System)
+
+actor Client
+actor Restaurateur
+participant "Frontend" as FE
+participant "Express API" as API
+participant "PostgreSQL" as DB
+participant "ScoringEngine" as Score
+participant "WeightedLottery" as Lottery
+participant "Auto-Accept Worker\n(every 2 min)" as Worker
+participant "Lottery Scheduler\n(every 60s)" as Scheduler
+
+== CLIENT CREATES APPOINTMENT ==
+
+Client -> FE : Select service, date/time, party size
+FE -> API : POST /api/appointments/\n{ service_id, date, party_size, items[] }
+API -> API : Validate: future date, opening hours,\n1-hour gap rule
+API -> DB : Check table availability + seat capacity
+DB --> API : Available
+
+alt Slot UNCONTESTED (no competing bookings)
+    API -> DB : Create appointment (status="accepted")
+    API --> FE : 201 { appointment, status: "accepted" }
+    note right of API : Booking confirmed immediately
+else Slot CONTESTED (2+ clients same slot)
+    API -> Score : Calculate client weight
+    Score -> Score : weight = BASE(100)\n+ (flexibility x 50)\n+ (loyalty x 30)\n- (penalty x 200)
+    Score --> API : weight = 145
+    API -> DB : Create appointment (status="pending")\n+ Insert into LotteryPool
+    API --> FE : 201 { appointment, status: "pending" }
+    note right of API : Enters lottery queue
+end
+
+== AUTO-ACCEPT WORKER (background) ==
+
+loop Every 2 minutes
+    Worker -> DB : Find pending appointments > 20 min old
+    DB --> Worker : List of pending appointments
+    loop For each contested slot
+        alt Slot has exactly 1 pending (no competition)
+            Worker -> DB : Update status -> "accepted"
+            Worker --> Restaurateur : Notification: new accepted booking
+        else Slot has 2+ pending (competition)
+            note over Worker : Leave for lottery resolution
+        end
+    end
+end
+
+== LOTTERY SCHEDULER (background) ==
+
+loop Every 60 seconds
+    Scheduler -> DB : Find slots with 2+ lottery entries
+    DB --> Scheduler : Contested slots
+    loop For each contested slot
+        Scheduler -> DB : Fetch all lottery entries for slot
+        Scheduler -> Lottery : Weighted random selection\n(with aging half-life boost)
+        Lottery --> Scheduler : Winner + Losers
+        Scheduler -> DB : Winner -> status="accepted"
+        Scheduler -> DB : Losers -> status="cancelled"
+        Scheduler --> Restaurateur : Notification: booking confirmed
+        Scheduler --> Client : Notification: lottery result
+    end
+end
+
+@enduml

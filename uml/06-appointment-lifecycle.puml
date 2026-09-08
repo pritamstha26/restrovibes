@@ -1,0 +1,131 @@
+@startuml RestroVibes - Appointment Lifecycle
+!theme plain
+title RestroVibes - Appointment Lifecycle & State Machine
+
+actor Client
+actor Restaurateur
+participant "Express API" as API
+participant "PostgreSQL" as DB
+participant "ScoringEngine" as Score
+participant "Overstay Worker\n(every 60s)" as OW
+
+== STATE MACHINE ==
+
+note over Client,OW
+  pending ──> accepted ──> in_progress ──> completed
+     │           │              │
+     │           │              └──> completed (overstayed)
+     │           └──> no_show (never arrived)
+     └──> cancelled
+end note
+
+== RESTAURATEUR: CONFIRM APPOINTMENT ==
+
+Restaurateur -> API : PUT /api/appointments/:id/confirm
+API -> DB : Verify appointment.restaurateurId == caller.id
+API -> DB : UPDATE status -> "accepted"
+API --> Restaurateur : 200 Confirmed
+
+== RESTAURATEUR: MARK ARRIVAL ==
+
+Restaurateur -> API : PUT /api/appointments/:id/arrived
+API -> DB : Fetch appointment (scheduledTime)
+API -> API : diffMinutes = (now - scheduledTime) / 60000
+
+alt Client is > 15 minutes late
+    API -> DB : UPDATE is_late = true,\nactual_arrival_time = now
+    API -> DB : INSERT BookingHistory\n(status = "late_arrival")
+    API -> Score : recalculateUserPenalty(clientId)
+    Score -> Score : penalty += lateArrivals x 0.4
+    Score -> Score : Update: penalty_score,\nreliability_status,\nis_flagged fields
+    Score --> API : Updated
+else Client arrived on time
+    API -> DB : UPDATE actual_arrival_time = now
+end
+
+API -> DB : UPDATE status -> "in_progress"
+API --> Restaurateur : 200 Marked as arrived
+
+== RESTAURATEUR: COMPLETE APPOINTMENT ==
+
+Restaurateur -> API : PUT /api/appointments/:id/complete
+API -> DB : UPDATE status -> "completed"
+API -> DB : INSERT BookingHistory\n(status = "completed")
+API -> Score : recalculateUserPenalty(clientId)
+Score -> Score : penalty -= completed bonus\n(decay factor applied)
+Score --> API : Updated
+API --> Restaurateur : 200 Completed
+
+== RESTAURATEUR: MARK NO-SHOW ==
+
+Restaurateur -> API : PUT /api/appointments/:id/no-show
+API -> DB : UPDATE status -> "no_show"
+API -> DB : INSERT BookingHistory\n(status = "no_show")
+API -> Score : recalculateUserPenalty(clientId)
+Score -> Score : penalty += noShows x 0.7\n(highest weight)
+Score --> API : Updated
+API --> Restaurateur : 200 Marked as no-show
+
+== CLIENT: REQUEST EXTENSION ==
+
+Client -> API : POST /api/appointments/:id/extend\n{ extra_minutes: 30 }
+API -> API : Verify: caller is appointment client
+API -> API : Verify: status IN (pending, accepted, in_progress)
+API -> API : newEnd = extended_until || end_time\n+ extra_minutes x 60000
+
+API -> DB : BEGIN TRANSACTION (SERIALIZABLE)
+API -> DB : SUM(party_size) for overlapping\nappointments at same restaurant\nin extension window [currentEnd, newEnd)
+DB --> API : seatsTaken = 12
+
+API -> API : Check: seatsTaken + party_size <= capacity
+alt Capacity OK
+    API -> DB : UPDATE end_time = newEnd,\nextended_until = nextEnd,\nextension_status = "accepted"
+    API -> DB : COMMIT
+    API --> Client : 200 Extended successfully
+else Not Enough Capacity
+    API -> DB : ROLLBACK
+    API --> Client : 409 Not enough capacity
+end
+
+== CLIENT: CANCEL APPOINTMENT ==
+
+Client -> API : PUT /api/appointments/:id/cancel
+API -> DB : Verify: caller is client or admin
+API -> DB : UPDATE status -> "cancelled"
+API --> Client : 200 Cancelled
+
+== OVERSTAY WORKER (Background) ==
+
+loop Every 60 seconds
+    OW -> DB : SELECT in_progress WHERE\nend_time + 10min < NOW()
+    DB --> OW : Overstayed appointments
+
+    loop For each overstayed appointment
+        OW -> DB : UPDATE status -> "completed"
+        OW -> DB : INSERT BookingHistory\n(status = "overstayed")
+        OW -> Score : recalculateUserPenalty(clientId)
+        Score -> Score : penalty += overstays x 0.15
+        Score --> OW : Updated
+    end
+
+    OW -> DB : SELECT pending/accepted WHERE\nend_time + grace < NOW()\n(never started)
+    DB --> OW : No-show appointments
+
+    loop For each no-show
+        OW -> DB : UPDATE status -> "no_show"
+        OW -> DB : INSERT BookingHistory\n(status = "no_show")
+        OW -> Score : recalculateUserPenalty(clientId)
+        Score -> Score : penalty += noShows x 0.7
+        Score --> OW : Updated
+    end
+end
+
+== ADMIN: CANCEL ANY APPOINTMENT ==
+
+Client -> API : PUT /api/appointments/:id/cancel
+API -> DB : Verify: caller is admin
+API -> API : Admin bypass: no ownership check
+API -> DB : UPDATE status -> "cancelled"
+API --> Client : 200 Cancelled
+
+@enduml

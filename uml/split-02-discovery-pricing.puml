@@ -1,0 +1,85 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 180
+
+title RestroVibes - GPS Discovery & Dynamic Pricing
+
+actor Client
+participant "Web Interface" as Web
+participant "LocationController" as Loc
+participant "AppointmentController" as Appt
+participant "Database" as DB
+
+== Discover Nearby Restaurants ==
+
+Client -> Web : Navigate to /client/nearby-restaurants
+Web -> Web : navigator.geolocation.getCurrentPosition()
+Web --> Web : { latitude, longitude }
+
+Web -> Loc : GET /api/location/nearby-restaurateurs\n?latitude=X&longitude=Y&maxDistance=10
+Loc -> DB : SELECT restaurateurs\nWHERE active_status = true
+DB --> Loc : Restaurateur list
+
+loop For each restaurateur
+    Loc -> Loc : haversineDistance(client, restaurant)
+    Loc -> Loc : ETA = (distance / 30) x 3600
+    Loc -> DB : COUNT active appointments today
+    DB --> Loc : activeAppointments
+    Loc -> Loc : occupancyRate = min(active/capacity, 1)\nseatsRemaining = max(capacity - active, 0)
+end
+
+Loc -> Loc : Filter + sort by distance
+Loc --> Web : [{ restaurant, distance, eta,\noccupancyRate, seatsRemaining }]
+
+Web -> Web : Render Leaflet map\n(centered on client)
+loop For each restaurant
+    Web -> Web : Add marker + popup
+end
+Web --> Client : Interactive map
+
+== View Restaurant Details ==
+
+Client -> Web : Click restaurant marker
+Web -> Appt : GET /api/appointments/restaurateurs/:id
+Appt -> DB : Fetch profile + services
+DB --> Appt : Restaurant data
+Appt --> Web : { restaurant, services, slots }
+
+Web -> DB : GET tables WHERE restaurateur_id
+DB --> Web : Table list with images
+Web --> Client : Restaurant profile page
+
+== Dynamic Pricing Calculation ==
+
+Client -> Web : View services
+Web -> DB : GET /api/restaurateurs-services/all\n?dynamic=true&restaurateurId=X
+DB --> Web : Services + demand info
+
+Web -> Web : calculateDynamicPrice()
+
+note right of Web
+  Distance fee = distanceKm x 1.5
+  Zone:
+    <= 3km  -> Local     (+0)
+    3-8km   -> Mid-range (+6)
+    > 8km   -> Long-range (+12)
+  Peak hour: +8 if true
+  Total = base + fees
+end note
+
+Web --> Client : Price breakdown modal
+
+== Update Location ==
+
+Client -> Web : Refresh GPS
+Web -> Loc : PUT /api/location/update\n{ latitude, longitude }
+Loc -> DB : UPDATE users SET coordinates
+DB --> Loc : Updated
+Loc --> Web : 200 Done
+
+@enduml
