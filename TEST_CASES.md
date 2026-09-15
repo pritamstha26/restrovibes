@@ -32,6 +32,9 @@
 | 4 | Book exceeding restaurant seat capacity | Active seats in use: 8, seat_capacity: 10, party_size: 3 | 409 "Seat capacity exceeded" error | 409 "Seat capacity exceeded" error | Pass |
 | 5 | Book with time slot index out of range | preferred_time_slot: 96 | 400 "Time slot must be between 0 and 95" error | 400 "Time slot must be between 0 and 95" error | Pass |
 | 6 | Book with negative party size | party_size: -1 | 400 validation error | 400 validation error | Pass |
+| 7 | Book with non-numeric / zero party size | party_size: "abc" or 0 | 400 "party_size must be a positive integer" error | 200 — falsy value silently replaced with party_size 1 and appointment created (`appointmentController.js:328`: `Number(...) \|\| ... \|\| 1`) | Fail |
+| 8 | Book on a future date when the restaurant is oversold that day | seat_capacity 10, tomorrow already at 8 seats, new request party_size 5 | 409 "Restaurant is fully booked" error | 200 — capacity check sums only **today's** seats (`countActiveAppointments`, `appointmentController.js:128`), so future-day oversell goes undetected | Fail |
+| 9 | Book with party size exceeding table capacity | Table C (capacity 4), party_size: 6 | 409 "Party size exceeds table capacity" error | Accepted or entered into pool — the per-table capacity check runs only when a `table_id` is supplied (`appointmentController.js:455`); contested bookings skip it entirely via the `else if (!isSlotContested)` guard at `:465` | Fail |
 
 **Table 4: Test Case for Scoring Engine — Base Weight Calculation of RestroVibes**
 
@@ -50,6 +53,7 @@
 |-------|-----------|-------|-----------------|---------------|-------------|
 | 1 | Second request on same slot enters lottery pool | User A already booked slot 34 (restaurant R, date 2026-09-15, status = pending), User B requests same slot | User B entry created in lottery_pool with status = pending, weight stored | Entry created, status = pending, weight stored | Pass |
 | 2 | First request on empty slot confirmed directly | No pending entries exist at slot 34 for restaurant R on 2026-09-15 | Appointment status = accepted, no lottery_pool entry created | Appointment status = accepted, no pool entry | Pass |
+| 3 | Enter lottery with invalid party size | POST /api/lottery/enter, party_size: -1, slot 10 | 400 validation error | 200 — `enterLottery` validates slot range but never party_size or capacity (`lotteryController.js:19-30`) | Fail |
 
 **Table 6: Test Case for Time-Decay Aging / Boost of RestroVibes**
 
@@ -68,6 +72,8 @@
 | 1 | Aged entry overtakes fresh higher-weight rival | B: base 98.13, 24h aged (eff ≈ 374.1) vs A: base 165, fresh (eff = 165), injected random = 0.42 | P(B) ≈ 69%, P(A) ≈ 31% — B selected as winner | P(B) ≈ 69%, P(A) ≈ 31%, B wins | Pass |
 | 2 | Inferior entry cannot overtake below quarter rule | X: base 30, max boost ×4 = 120 vs Y: base 140, boost ×1 = 140 | X never exceeds Y at any aging level; X cannot win | X effective weight always < Y | Pass |
 | 3 | Two equal fresh entries — fair coin flip | A: base 120, fresh; B: base 120, fresh | P(A) = P(B) = 50% | P(A) = P(B) = 50% | Pass |
+| 4 | Draw with all entries at zero weight | Two entries with weight 0 / 0 in the pool | No winner selected, pool left pending | selectWeightedEntry() silently returns the **last entry** as the winner (`weightedLottery.js:38`, `if (totalWeight <= 0) return weightedEntries[weightedEntries.length - 1]`) | Fail |
+| 5 | Draw with a zero-weight entry in the pool | Entries: A weight 100, B weight 0 — random lands past A's threshold | Only A eligible, B skipped | Threshold loop skips B but falls through to return the **last entry** (`weightedLottery.js:47`), which can be the zero-weight entry B | Fail |
 
 **Table 8: Test Case for Resolution & Appointment Lifecycle of RestroVibes**
 
@@ -80,6 +86,9 @@
 | 5 | No-show triggers penalty recalculation | Restaurateur marks no-show, client has 3 total bookings, 1 no-show | penalty_score recalculated via recalculateUserPenalty(), reliability_status updated | Penalty recalculated, status updated | Pass |
 | 6 | Cancel appointment without providing reason | PUT /api/appointments/:id/cancel with cancellation_reason blank | 400 "Cancellation reason is required" error | 400 "Cancellation reason is required" error | Pass |
 | 7 | Manual lottery resolve without admin role | POST /api/lottery/resolve (role = client) | 403 Unauthorized | 403 Unauthorized | Pass |
+| 8 | Resolve a slot when the client holds multiple pending appointments that day | Client has pending appointments at slot 30 and slot 45; resolve slot 30, client wins | Only the slot-30 appointment accepted | Winner matched by client/restaurant/date only, ordering by date DESC (`lotteryController.js:234`) — the latest appointment (slot 45) is "accepted" instead | Fail |
+| 9 | Loser cancellation on a multi-slot day | Client loses slot 30 but also holds a pending slot 45 appointment | Only the slot-30 appointment cancelled | Loser appointment matched the same day-only way (`lotteryController.js:252`) — the wrong appointment can be cancelled | Fail |
+| 10 | Resolve without transaction under concurrent manual + scheduler resolve | Two resolve calls target the same slot simultaneously | Exactly one winner, others lost | Winner selection and status updates are not transactional — both calls can draw different winners before the update commits | Fail |
 
 ### 4.2.2 System Testing
 
@@ -117,41 +126,6 @@
 | 4 | Admin views a specific user's risk profile | Penalty breakdown, booking history, reliability status returned | Risk profile displayed | Pass |
 | 5 | Admin triggers manual lottery resolve | Contest resolved immediately, winners and losers updated | Lottery resolved | Pass |
 | 6 | Admin logs out | Session terminated | Logged out successfully | Pass |
-
-### 4.2.3 Failed Test Cases (Bugs Found During Testing)
-
-The failures below were reproduced against the current codebase at `server/controllers/appointmentController.js`, `server/controllers/lotteryController.js`, `server/utils/weightedLottery.js`, and `server/utils/time.js`. Source references are noted in each test.
-
-**Table 12: Failed Test Cases — Booking Validation of RestroVibes**
-
-| S. No | Test Name | Input | Expected Output | Actual Output | Test Result |
-|-------|-----------|-------|-----------------|---------------|-------------|
-| 1 | Book with non-numeric / zero party size | party_size: "abc" or 0 | 400 "party_size must be a positive integer" | 200 — falsy value silently replaced with party_size 1 and appointment created (`appointmentController.js:328`: `Number(...) \|\| ... \|\| 1`) | Fail |
-| 2 | Book on a future date when the restaurant is oversold that day | seat_capacity 10, tomorrow already at 8 seats, new request party_size 5 | 409 "Restaurant is fully booked" | 200 — capacity check sums only **today's** seats (`countActiveAppointments`, `appointmentController.js:128`), so future-day oversell goes undetected | Fail |
-| 3 | Book with party size exceeding table capacity | Table C (capacity 4), party_size: 6 | 409 "Party size exceeds table capacity" | 200-booked or entered into pool — the per-table capacity check runs only when a `table_id` is supplied (`appointmentController.js:455`); contested bookings skip it entirely via the `else if (!isSlotContested)` guard at `:465` | Fail |
-
-**Table 13: Failed Test Cases — Weighted Lottery of RestroVibes**
-
-| S. No | Test Name | Input / DB State | Expected Output | Actual Output | Test Result |
-|-------|-----------|------------------|-----------------|---------------|-------------|
-| 1 | Draw with all entries at zero weight | Two entries with weight 0 / 0 in the pool | No winner selected, pool left pending | selectWeightedEntry() silently returns the **last entry** as the winner (`weightedLottery.js:38`, `if (totalWeight <= 0) return weightedEntries[weightedEntries.length - 1]`) | Fail |
-| 2 | Enter lottery with invalid party size | POST /api/lottery/enter, party_size: -1, slot 10 | 400 validation error | 200 — `enterLottery` validates slot range but never party_size or capacity (`lotteryController.js:19-30`) | Fail |
-| 3 | Draw with an entry whose effective weight is zero | Entries: A weight 100, B weight 0 — random lands past A's threshold | Only A eligible, B skipped | Threshold loop skips B but falls through to return the **last entry** (`weightedLottery.js:47`), which can be the zero-weight entry B | Fail |
-
-**Table 14: Failed Test Cases — Lottery Resolution of RestroVibes**
-
-| S. No | Test Name | Input | Expected Output | Actual Output | Test Result |
-|-------|-----------|-------|-----------------|---------------|-------------|
-| 1 | Resolve a slot when the client holds multiple pending appointments that day | Client has pending appointments at slot 30 and slot 45; resolve slot 30, client wins | Only the slot-30 appointment accepted | Winner matched by client/restaurant/date only, ordering by date DESC (`lotteryController.js:234`) — the latest appointment (slot 45) is "accepted" instead | Fail |
-| 2 | Loser cancellation on a multi-slot day | Same as above, client loses slot 30 | Only slot-30 appointment cancelled | Loser appointment matched the same day-only way (`lotteryController.js:252`) — the wrong appointment can be cancelled | Fail |
-| 3 | Resolve without transaction under concurrent manual + scheduler resolve | Two resolve calls target the same slot simultaneously | Exactly one winner, others lost | Winner selection and status updates are not transactional — both calls can draw different winners before the update commits | Fail |
-
-**Table 15: Failed Test Cases — Time Formatting of RestroVibes**
-
-| S. No | Test Name | Input | Expected Output | Actual Output | Test Result |
-|-------|-----------|-------|-----------------|---------------|-------------|
-| 1 | Format midnight time | time: "00:30" | "12:30 AM" | "0:30 AM" — hour 0 not remapped to 12 (`time.js:11`) | Fail |
-| 2 | Format noon time | time: "12:15" | "12:15 PM" | "12:15 PM" | Pass |
 
 ### Result Analysis
 
