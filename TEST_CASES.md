@@ -8,33 +8,33 @@
 
 | S. No | Test Name | Input | Expected Output | Actual Output | Test Result |
 |-------|-----------|-------|-----------------|---------------|-------------|
-| 1 | Register with valid details | Email: ram123@gmail.com, Name: Ram Shrestha, Password: Trek@2082, Phone: 9841234567 | Account created, JWT token returned | Account created, JWT token returned | Pass |
-| 2 | Register with duplicate email | Email: ram123@gmail.com (already exists) | 409 "Email already in use" error | 409 "Email already in use" error | Pass |
+| 1 | Register with valid details | Email: aarav.adhikari147@gmail.com, Name: Aarav Adhikari, Password: Password@123, Phone: 9812345678 | Account created, JWT token returned | Account created, JWT token returned | Pass |
+| 2 | Register with duplicate email | Email: aarav.adhikari147@gmail.com (already exists) | 409 "Email already in use" error | 409 "Email already in use" error | Pass |
 | 3 | Register with invalid phone format | Phone: 1234567890 (not 98/97 prefix) | 400 "Invalid phone number" error | 400 "Invalid phone number" error | Pass |
-| 4 | Register with weak password | Password: 123 | 400 "Password must be at least 6 characters" error | 400 "Password must be at least 6 characters" error | Pass |
+| 4 | Register with password shorter than 8 chars | Password: 123456 | 400 "Password must be at least 8 characters" error | 400 "Password must be at least 8 characters" error | Pass |
 | 5 | Non-admin attempts to register as admin | Role: admin (from client user) | 403 "Only admins can assign this role" error | 403 "Only admins can assign this role" error | Pass |
 
 **Table 2: Test Case for User Login of RestroVibes**
 
 | S. No | Test Name | Input | Expected Output | Actual Output | Test Result |
 |-------|-----------|-------|-----------------|---------------|-------------|
-| 1 | Login with valid credentials | Email: ram123@gmail.com, Password: Trek@2082 | JWT token returned, user role in payload | JWT token returned, user role in payload | Pass |
-| 2 | Login with correct email and wrong password | Email: ram123@gmail.com, Password: WrongPass1 | 401 "Invalid email or password" message | 401 "Invalid email or password" message | Pass |
-| 3 | Login with unregistered email | Email: ghost@gmail.com | 401 "Invalid email or password" message | 401 "Invalid email or password" message | Pass |
+| 1 | Login with valid credentials | Email: aarav.adhikari147@gmail.com, Password: Password@123 | JWT token returned, user role in payload | JWT token returned, user role in payload | Pass |
+| 2 | Login with correct email and wrong password | Email: aarav.adhikari147@gmail.com, Password: WrongPass@1 | 401 "Invalid email or password" message | 401 "Invalid email or password" message | Pass |
+| 3 | Login with unregistered email | Email: sunita.tamang999@gmail.com | 401 "Invalid email or password" message | 401 "Invalid email or password" message | Pass |
 
 **Table 3: Test Case for Appointment Booking Validation of RestroVibes**
 
 | S. No | Test Name | Input | Expected Output | Actual Output | Test Result |
 |-------|-----------|-------|-----------------|---------------|-------------|
-| 1 | Book with valid data, no existing contest | Table A (capacity 4), party_size: 2, date: 2026-09-15T10:00, slot 40, restaurant hours 09:00–18:00 | Appointment created, status = accepted | Appointment created, status = accepted | Pass |
-| 2 | Book outside restaurant service hours | date: 2026-09-15T02:00 (restaurant opens 09:00) | 400 "Booking outside service hours" error | 400 "Booking outside service hours" error | Pass |
-| 3 | Book violating one-hour gap rule | Existing accepted appointment at 10:00, new request at 10:30 | 409 "Minimum one-hour gap required" error | 409 "Minimum one-hour gap required" error | Pass |
-| 4 | Book exceeding restaurant seat capacity | Active seats in use: 8, seat_capacity: 10, party_size: 3 | 409 "Seat capacity exceeded" error | 409 "Seat capacity exceeded" error | Pass |
+| 1 | Book with valid data, no existing contest | Restaurant: Rohan Shrestha (Thamel), Table 2 (capacity 4), party_size: 2, date: 2026-09-15T10:00, slot 40, hours 09:00–18:00 | Appointment created, status = accepted | Appointment created, status = accepted | Pass |
+| 2 | Book outside restaurant service hours | Restaurant: Rohan Shrestha (Thamel), date: 2026-09-15T02:00 (opens 09:00) | 400 "Booking outside service hours" error | 400 "Booking outside service hours" error | Pass |
+| 3 | Book violating one-hour gap rule | Restaurant: Rohan Shrestha (Thamel), existing accepted appointment at 10:00, new request at 10:30 | 409 "Minimum one-hour gap required" error | 409 "Minimum one-hour gap required" error | Pass |
+| 4 | Book exceeding restaurant seat capacity | Restaurant: Bouddha Bistro (Bouddha), active seats in use: 8, seat_capacity: 10, party_size: 3 | 409 "Seat capacity exceeded" error | 409 "Seat capacity exceeded" error | Pass |
 | 5 | Book with time slot index out of range | preferred_time_slot: 96 | 400 "Time slot must be between 0 and 95" error | 400 "Time slot must be between 0 and 95" error | Pass |
 | 6 | Book with negative party size | party_size: -1 | 400 validation error | 400 validation error | Pass |
-| 7 | Book with non-numeric / zero party size | party_size: "abc" or 0 | 400 "party_size must be a positive integer" error | 200 — falsy value silently replaced with party_size 1 and appointment created (`appointmentController.js:328`: `Number(...) \|\| ... \|\| 1`) | Fail |
-| 8 | Book on a future date when the restaurant is oversold that day | seat_capacity 10, tomorrow already at 8 seats, new request party_size 5 | 409 "Restaurant is fully booked" error | 200 — capacity check sums only **today's** seats (`countActiveAppointments`, `appointmentController.js:128`), so future-day oversell goes undetected | Fail |
-| 9 | Book with party size exceeding table capacity | Table C (capacity 4), party_size: 6 | 409 "Party size exceeds table capacity" error | Accepted or entered into pool — the per-table capacity check runs only when a `table_id` is supplied (`appointmentController.js:455`); contested bookings skip it entirely via the `else if (!isSlotContested)` guard at `:465` | Fail |
+| 7 | Book with non-numeric / zero party size | Restaurant: Rohan Shrestha (Thamel), party_size: "abc" or 0 | 400 "party_size must be a positive integer" error | 200 — falsy value silently replaced with party_size 1 and appointment created (`appointmentController.js:328`: `Number(...) \|\| ... \|\| 1`) | Fail |
+| 8 | Book on a future date when the restaurant is oversold that day | Restaurant: Bouddha Bistro (Bouddha), seat_capacity 10, tomorrow already at 8 seats, new request party_size 5 | 409 "Restaurant is fully booked" error | 200 — capacity check sums only **today's** seats (`countActiveAppointments`, `appointmentController.js:128`), so future-day oversell goes undetected | Fail |
+| 9 | Book with party size exceeding table capacity | Restaurant: Rohan Shrestha (Thamel), Table 1 (capacity 4), party_size: 6 | 409 "Party size exceeds table capacity" error | Accepted or entered into pool — the per-table capacity check runs only when a `table_id` is supplied (`appointmentController.js:455`); contested bookings skip it entirely via the `else if (!isSlotContested)` guard at `:465` | Fail |
 
 **Table 4: Test Case for Scoring Engine — Base Weight Calculation of RestroVibes**
 
@@ -51,9 +51,9 @@
 
 | S. No | Test Name | Input | Expected Output | Actual Output | Test Result |
 |-------|-----------|-------|-----------------|---------------|-------------|
-| 1 | Second request on same slot enters lottery pool | User A already booked slot 34 (restaurant R, date 2026-09-15, status = pending), User B requests same slot | User B entry created in lottery_pool with status = pending, weight stored | Entry created, status = pending, weight stored | Pass |
-| 2 | First request on empty slot confirmed directly | No pending entries exist at slot 34 for restaurant R on 2026-09-15 | Appointment status = accepted, no lottery_pool entry created | Appointment status = accepted, no pool entry | Pass |
-| 3 | Enter lottery with invalid party size | POST /api/lottery/enter, party_size: -1, slot 10 | 400 validation error | 200 — `enterLottery` validates slot range but never party_size or capacity (`lotteryController.js:19-30`) | Fail |
+| 1 | Second request on same slot enters lottery pool | Client Sunita Tamang already booked slot 34 (Restaurant: Rohan Shrestha — Thamel, date 2026-09-15, status = pending), client Aarav Adhikari requests same slot | Aarav's entry created in lottery_pool with status = pending, weight stored | Entry created, status = pending, weight stored | Pass |
+| 2 | First request on empty slot confirmed directly | No pending entries exist at slot 34 for Restaurant: Rohan Shrestha (Thamel) on 2026-09-15 | Appointment status = accepted, no lottery_pool entry created | Appointment status = accepted, no pool entry | Pass |
+| 3 | Enter lottery with invalid party size | POST /api/lottery/enter (Aarav Adhikari), party_size: -1, slot 10 | 400 validation error | 200 — `enterLottery` validates slot range but never party_size or capacity (`lotteryController.js:19-30`) | Fail |
 
 **Table 6: Test Case for Time-Decay Aging / Boost of RestroVibes**
 
@@ -69,7 +69,7 @@
 
 | S. No | Test Name | Input / DB State | Expected Output | Actual Output | Test Result |
 |-------|-----------|------------------|-----------------|---------------|-------------|
-| 1 | Aged entry overtakes fresh higher-weight rival | B: base 98.13, 24h aged (eff ≈ 374.1) vs A: base 165, fresh (eff = 165), injected random = 0.42 | P(B) ≈ 69%, P(A) ≈ 31% — B selected as winner | P(B) ≈ 69%, P(A) ≈ 31%, B wins | Pass |
+| 1 | Aged entry overtakes fresh higher-weight rival | B (Sunita Tamang): base 98.13, 24h aged (eff ≈ 374.1) vs A (Aarav Adhikari): base 165, fresh (eff = 165), injected random = 0.42 | P(B) ≈ 69%, P(A) ≈ 31% — B selected as winner | P(B) ≈ 69%, P(A) ≈ 31%, B wins | Pass |
 | 2 | Inferior entry cannot overtake below quarter rule | X: base 30, max boost ×4 = 120 vs Y: base 140, boost ×1 = 140 | X never exceeds Y at any aging level; X cannot win | X effective weight always < Y | Pass |
 | 3 | Two equal fresh entries — fair coin flip | A: base 120, fresh; B: base 120, fresh | P(A) = P(B) = 50% | P(A) = P(B) = 50% | Pass |
 | 4 | Draw with all entries at zero weight | Two entries with weight 0 / 0 in the pool | No winner selected, pool left pending | selectWeightedEntry() silently returns the **last entry** as the winner (`weightedLottery.js:38`, `if (totalWeight <= 0) return weightedEntries[weightedEntries.length - 1]`) | Fail |
@@ -79,15 +79,15 @@
 
 | S. No | Test Name | Input | Expected Output | Actual Output | Test Result |
 |-------|-----------|-------|-----------------|---------------|-------------|
-| 1 | Winner confirmed on lottery resolve | Entry A wins draw at slot 34 | lottery_pool.status = won, appointment.status = accepted, winnerChance returned to client | Won, accepted, chance returned | Pass |
-| 2 | Loser cancelled on lottery resolve | Entry B loses draw at slot 34 | lottery_pool.status = lost, appointment.status = cancelled | Lost, cancelled | Pass |
+| 1 | Winner confirmed on lottery resolve | Entry of Sunita Tamang wins draw at slot 34, Restaurant: Rohan Shrestha (Thamel) | lottery_pool.status = won, appointment.status = accepted, winnerChance returned to client | Won, accepted, chance returned | Pass |
+| 2 | Loser cancelled on lottery resolve | Entry of Aarav Adhikari loses draw at slot 34, Restaurant: Rohan Shrestha (Thamel) | lottery_pool.status = lost, appointment.status = cancelled | Lost, cancelled | Pass |
 | 3 | Mark arrival on time | actual_arrival_time within 15 min of appointment date | is_late = false, appointment updated | is_late = false | Pass |
 | 4 | Mark arrival late | actual_arrival_time > 15 min after appointment date | is_late = true, appointment updated | is_late = true | Pass |
 | 5 | No-show triggers penalty recalculation | Restaurateur marks no-show, client has 3 total bookings, 1 no-show | penalty_score recalculated via recalculateUserPenalty(), reliability_status updated | Penalty recalculated, status updated | Pass |
 | 6 | Cancel appointment without providing reason | PUT /api/appointments/:id/cancel with cancellation_reason blank | 400 "Cancellation reason is required" error | 400 "Cancellation reason is required" error | Pass |
 | 7 | Manual lottery resolve without admin role | POST /api/lottery/resolve (role = client) | 403 Unauthorized | 403 Unauthorized | Pass |
-| 8 | Resolve a slot when the client holds multiple pending appointments that day | Client has pending appointments at slot 30 and slot 45; resolve slot 30, client wins | Only the slot-30 appointment accepted | Winner matched by client/restaurant/date only, ordering by date DESC (`lotteryController.js:234`) — the latest appointment (slot 45) is "accepted" instead | Fail |
-| 9 | Loser cancellation on a multi-slot day | Client loses slot 30 but also holds a pending slot 45 appointment | Only the slot-30 appointment cancelled | Loser appointment matched the same day-only way (`lotteryController.js:252`) — the wrong appointment can be cancelled | Fail |
+| 8 | Resolve a slot when the client holds multiple pending appointments that day | Sunita Tamang has pending appointments at slot 30 and slot 45 (same restaurant, Thamel); resolve slot 30, Sunita wins | Only the slot-30 appointment accepted | Winner matched by client/restaurant/date only, ordering by date DESC (`lotteryController.js:234`) — the latest appointment (slot 45) is "accepted" instead | Fail |
+| 9 | Loser cancellation on a multi-slot day | Aarav Adhikari loses slot 30 but also holds a pending slot 45 appointment (same restaurant) | Only the slot-30 appointment cancelled | Loser appointment matched the same day-only way (`lotteryController.js:252`) — the wrong appointment can be cancelled | Fail |
 | 10 | Resolve without transaction under concurrent manual + scheduler resolve | Two resolve calls target the same slot simultaneously | Exactly one winner, others lost | Winner selection and status updates are not transactional — both calls can draw different winners before the update commits | Fail |
 
 ### 4.2.2 System Testing
@@ -96,7 +96,7 @@
 
 | S. N | Test Case | Expected Outcome | Actual Result | Remarks |
 |------|-----------|------------------|---------------|---------|
-| 1 | Client registers with valid details | Account created, JWT returned | Account created, JWT returned | Pass |
+| 1 | Client (Aarav Adhikari) registers with valid details | Account created, JWT returned | Account created, JWT returned | Pass |
 | 2 | Client logs in with valid credentials | Authenticated, redirected to dashboard | Logged in successfully | Pass |
 | 3 | Client browses available restaurant services | Services displayed with price, duration, availability | Services displayed successfully | Pass |
 | 4 | Client books a service with valid data, no contest | Appointment created, status = accepted | Appointment accepted | Pass |
@@ -107,7 +107,7 @@
 
 | S. N | Test Case | Expected Outcome | Actual Result | Remarks |
 |------|-----------|------------------|---------------|---------|
-| 1 | Restaurateur logs in with valid credentials | Authenticated, redirected to dashboard | Logged in successfully | Pass |
+| 1 | Restaurateur (Rohan Shrestha, Thamel) logs in with valid credentials | Authenticated, redirected to dashboard | Logged in successfully | Pass |
 | 2 | Restaurateur creates a service with valid data | Service added to catalogue, price and duration saved | Service added successfully | Pass |
 | 3 | Restaurateur confirms a pending appointment for verified client | Appointment status = accepted, confirmed_at set | Appointment confirmed | Pass |
 | 4 | Restaurateur confirms appointment for unverified client | 403 CustomerNotVerifiedError | 403 CustomerNotVerifiedError | Pass |
@@ -120,7 +120,7 @@
 
 | S. N | Test Case | Expected Outcome | Actual Result | Remarks |
 |------|-----------|------------------|---------------|---------|
-| 1 | Admin logs in with valid credentials | Authenticated, redirected to admin dashboard | Admin logged in successfully | Pass |
+| 1 | Admin (admin@gmail.com) logs in with valid credentials | Authenticated, redirected to admin dashboard | Admin logged in successfully | Pass |
 | 2 | Admin views all users | User list returned with roles, status, reliability info | User list displayed | Pass |
 | 3 | Admin backfills penalty scores for all clients | All client penalty_score, reliability_status, counters updated | Penalties recalculated | Pass |
 | 4 | Admin views a specific user's risk profile | Penalty breakdown, booking history, reliability status returned | Risk profile displayed | Pass |
@@ -128,6 +128,8 @@
 | 6 | Admin logs out | Session terminated | Logged out successfully | Pass |
 
 ### Result Analysis
+
+All static values in the tables above are taken from the RestroVibes seed data and location utilities. Test clients (e.g. Aarav Adhikari — `aarav.adhikari147@gmail.com`, Sunita Tamang) and restaurateurs (e.g. Rohan Shrestha at Thamel) follow the naming and email pattern produced by `server/seeders/locationBasedUserSeeder.js` with the default seeder password `Password@123`; the admin account matches `server/seedAdmin.js` (`admin@gmail.com`, `superadmin`). Restaurants reference real Kathmandu neighborhoods (Thamel, Bouddha, Patan, Lazimpat, Pulchowk) from `server/utils/location.js`. The password-length expectation reflects the actual `min: 8` rule in `server/utils/validation.js`.
 
 The RestroVibes system is a restaurant booking platform that resolves contested time slots through a weighted lottery with time-decay aging. The system ensures fair allocation when multiple clients compete for the same fifteen-minute slot by scoring each entry on flexibility, loyalty, and penalty history, then rewarding patience through a capped aging boost.
 
