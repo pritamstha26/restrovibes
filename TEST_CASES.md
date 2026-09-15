@@ -118,6 +118,41 @@
 | 5 | Admin triggers manual lottery resolve | Contest resolved immediately, winners and losers updated | Lottery resolved | Pass |
 | 6 | Admin logs out | Session terminated | Logged out successfully | Pass |
 
+### 4.2.3 Failed Test Cases (Bugs Found During Testing)
+
+The failures below were reproduced against the current codebase at `server/controllers/appointmentController.js`, `server/controllers/lotteryController.js`, `server/utils/weightedLottery.js`, and `server/utils/time.js`. Source references are noted in each test.
+
+**Table 12: Failed Test Cases — Booking Validation of RestroVibes**
+
+| S. No | Test Name | Input | Expected Output | Actual Output | Test Result |
+|-------|-----------|-------|-----------------|---------------|-------------|
+| 1 | Book with non-numeric / zero party size | party_size: "abc" or 0 | 400 "party_size must be a positive integer" | 200 — falsy value silently replaced with party_size 1 and appointment created (`appointmentController.js:328`: `Number(...) \|\| ... \|\| 1`) | Fail |
+| 2 | Book on a future date when the restaurant is oversold that day | seat_capacity 10, tomorrow already at 8 seats, new request party_size 5 | 409 "Restaurant is fully booked" | 200 — capacity check sums only **today's** seats (`countActiveAppointments`, `appointmentController.js:128`), so future-day oversell goes undetected | Fail |
+| 3 | Book with party size exceeding table capacity | Table C (capacity 4), party_size: 6 | 409 "Party size exceeds table capacity" | 200-booked or entered into pool — the per-table capacity check runs only when a `table_id` is supplied (`appointmentController.js:455`); contested bookings skip it entirely via the `else if (!isSlotContested)` guard at `:465` | Fail |
+
+**Table 13: Failed Test Cases — Weighted Lottery of RestroVibes**
+
+| S. No | Test Name | Input / DB State | Expected Output | Actual Output | Test Result |
+|-------|-----------|------------------|-----------------|---------------|-------------|
+| 1 | Draw with all entries at zero weight | Two entries with weight 0 / 0 in the pool | No winner selected, pool left pending | selectWeightedEntry() silently returns the **last entry** as the winner (`weightedLottery.js:38`, `if (totalWeight <= 0) return weightedEntries[weightedEntries.length - 1]`) | Fail |
+| 2 | Enter lottery with invalid party size | POST /api/lottery/enter, party_size: -1, slot 10 | 400 validation error | 200 — `enterLottery` validates slot range but never party_size or capacity (`lotteryController.js:19-30`) | Fail |
+| 3 | Draw with an entry whose effective weight is zero | Entries: A weight 100, B weight 0 — random lands past A's threshold | Only A eligible, B skipped | Threshold loop skips B but falls through to return the **last entry** (`weightedLottery.js:47`), which can be the zero-weight entry B | Fail |
+
+**Table 14: Failed Test Cases — Lottery Resolution of RestroVibes**
+
+| S. No | Test Name | Input | Expected Output | Actual Output | Test Result |
+|-------|-----------|-------|-----------------|---------------|-------------|
+| 1 | Resolve a slot when the client holds multiple pending appointments that day | Client has pending appointments at slot 30 and slot 45; resolve slot 30, client wins | Only the slot-30 appointment accepted | Winner matched by client/restaurant/date only, ordering by date DESC (`lotteryController.js:234`) — the latest appointment (slot 45) is "accepted" instead | Fail |
+| 2 | Loser cancellation on a multi-slot day | Same as above, client loses slot 30 | Only slot-30 appointment cancelled | Loser appointment matched the same day-only way (`lotteryController.js:252`) — the wrong appointment can be cancelled | Fail |
+| 3 | Resolve without transaction under concurrent manual + scheduler resolve | Two resolve calls target the same slot simultaneously | Exactly one winner, others lost | Winner selection and status updates are not transactional — both calls can draw different winners before the update commits | Fail |
+
+**Table 15: Failed Test Cases — Time Formatting of RestroVibes**
+
+| S. No | Test Name | Input | Expected Output | Actual Output | Test Result |
+|-------|-----------|-------|-----------------|---------------|-------------|
+| 1 | Format midnight time | time: "00:30" | "12:30 AM" | "0:30 AM" — hour 0 not remapped to 12 (`time.js:11`) | Fail |
+| 2 | Format noon time | time: "12:15" | "12:15 PM" | "12:15 PM" | Pass |
+
 ### Result Analysis
 
 The RestroVibes system is a restaurant booking platform that resolves contested time slots through a weighted lottery with time-decay aging. The system ensures fair allocation when multiple clients compete for the same fifteen-minute slot by scoring each entry on flexibility, loyalty, and penalty history, then rewarding patience through a capped aging boost.
