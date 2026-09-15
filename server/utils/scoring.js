@@ -3,30 +3,15 @@ import { BookingHistoryModel, UsersModel } from "../models/model.js";
 
 export class ScoringEngine {
   static calculateFlexibility(preferences = {}) {
-    const {
-      flexibilityRangeMinutes = 0,
-      alternativeDates = [],
-      alternativePartySize = false,
-    } = preferences;
-
-    let score = 0;
+    const { flexibilityRangeMinutes = 0 } = preferences;
 
     if (flexibilityRangeMinutes <= 30) {
-      score = 0.4;
-    } else if (flexibilityRangeMinutes <= 60) {
-      score = 0.7;
-    } else if (flexibilityRangeMinutes > 60) {
-      score = 1.0;
+      return 0.4;
     }
-
-    const alternativeDateBonus = Math.min(alternativeDates.length, 3) * 0.1;
-    score += alternativeDateBonus;
-
-    if (alternativePartySize) {
-      score += 0.1;
+    if (flexibilityRangeMinutes <= 60) {
+      return 0.7;
     }
-
-    return Math.min(score, 1.0);
+    return 1.0;
   }
 
   static async calculateLoyalty(userId, restaurantId) {

@@ -301,12 +301,12 @@ Resolves slot conflicts when multiple clients book the same time slot at the sam
 #### Weight Calculation
 ```
 BASE_WEIGHT = 100
-totalWeight = BASE_WEIGHT + (flexibilityScore × 50) + (loyaltyScore × 30) - (penaltyScore × 200)
+totalWeight = BASE_WEIGHT + (loyaltyScore × 30) - (penaltyScore × 200)
 ```
 
 Where:
-- **flexibilityScore** (0-1): Based on `flexibilityRangeMinutes` (≤30min=0.4, ≤60min=0.7, >60min=1.0) + alternative date bonus
-- **loyaltyScore** (0-1): Based on completed bookings at restaurant (≥6=1.0, ≥3=0.7, ≥1=0.4) + platform-wide history + account age
+- **loyaltyScore** (0-1): Based on completed bookings at restaurant (≥6=1.0, ≥3=0.6, ≥1=0.3) + platform-wide history + account age
+- **penaltyScore** (0-1): Client reliability score — reduces weight so that unreliable clients are less likely to win
 
 #### Selection Algorithm
 1. Collect all pending lottery entries for the contested slot

@@ -230,41 +230,32 @@ console.log("\n=== SCORING: calculateFlexibility ===");
   assert(score === 1.0, "90min range → 1.0");
 }
 
-// Alternative dates bonus
+// Alternative dates no longer grant bonus points
 {
   const score = ScoringEngine.calculateFlexibility({
     flexibilityRangeMinutes: 15,
-    alternativeDates: ["2025-01-01"],
+    alternativeDates: ["2025-01-01", "2025-01-02", "2025-01-03"],
   });
-  approx(score, 0.5, 0.01, "1 alt date → +0.1");
+  assert(score === 0.4, "Alternative dates → no bonus (removed)");
 }
 
-// Max alternative dates bonus (capped at 3)
-{
-  const score = ScoringEngine.calculateFlexibility({
-    flexibilityRangeMinutes: 15,
-    alternativeDates: ["a", "b", "c", "d", "e"],
-  });
-  approx(score, 0.7, 0.01, "5 alt dates → capped at +0.3");
-}
-
-// Alternative party size bonus
+// Alternative party size no longer grants bonus points
 {
   const score = ScoringEngine.calculateFlexibility({
     flexibilityRangeMinutes: 15,
     alternativePartySize: true,
   });
-  approx(score, 0.5, 0.01, "Alt party size → +0.1");
+  assert(score === 0.4, "Alternative party size → no bonus (removed)");
 }
 
-// All bonuses combined, clamped at 1.0
+// Window alone tops out at 1.0
 {
   const score = ScoringEngine.calculateFlexibility({
     flexibilityRangeMinutes: 90,
-    alternativeDates: ["a", "b", "c"],
+    alternativeDates: ["2025-01-01", "2025-01-02", "2025-01-03"],
     alternativePartySize: true,
   });
-  assert(score === 1.0, "All bonuses → clamped at 1.0");
+  assert(score === 1.0, "Window ≥60min → 1.0 regardless of alternatives");
 }
 
 // Edge: exactly 30 min
