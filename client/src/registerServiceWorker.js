@@ -1,7 +1,13 @@
-import { registerSW } from 'virtual:pwa-register';
-
-export function registerServiceWorker() {
-  const updateSW = registerSW({
+export async function registerServiceWorker() {
+  let updateSW;
+  try {
+    const mod = await import('virtual:pwa-register');
+    updateSW = mod.registerSW;
+  } catch {
+    console.log('PWA module not available');
+    return;
+  }
+  updateSW({
     onNeedRefresh() {
       if (confirm('New content available. Refresh?')) {
         updateSW(true);
