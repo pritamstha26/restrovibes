@@ -1,20 +1,20 @@
+import { Workbox } from 'workbox-window';
+
 export async function registerServiceWorker() {
-  let updateSW;
-  try {
-    const mod = await import('virtual:pwa-register');
-    updateSW = mod.registerSW;
-  } catch {
-    console.log('PWA module not available');
-    return;
-  }
-  updateSW({
-    onNeedRefresh() {
+  if (!('serviceWorker' in navigator)) return;
+  const wb = new Workbox('/sw.js');
+  wb.register().then((registration) => {
+    console.log('SW registered:', registration);
+    wb.addEventListener('waiting', () => {
       if (confirm('New content available. Refresh?')) {
-        updateSW(true);
+        wb.messageSkipWaiting();
+        window.location.reload();
       }
-    },
-    onOfflineReady() {
-      console.log('App is ready to work offline');
-    },
+    });
+    wb.addEventListener('installed', () => {
+      if (wb.active) console.log('App is ready to work offline');
+    });
+  }).catch((err) => {
+    console.log('SW registration failed:', err);
   });
 }
