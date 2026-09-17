@@ -3,13 +3,17 @@ import { Spinner, Alert } from "react-bootstrap";
 import {
   CalendarCheck,
   Landmark,
-  Scissors,
+  UtensilsCrossed,
   Clock,
   User,
   RefreshCw,
+  Shuffle,
 } from "lucide-react";
 import api from "../../apis/api";
 import "./admin-panel.css";
+
+const slotToTime = (slot) =>
+  `${String(Math.floor(slot / 4)).padStart(2, "0")}:${String((slot % 4) * 15).padStart(2, "0")}`;
 
 const TABS = [
   { id: "pending", label: "Pending Requests" },
@@ -23,6 +27,10 @@ export default function AdminBookings() {
   const [activeTab, setActiveTab] = useState("pending");
   const [sortField, setSortField] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
+  const [pools, setPools] = useState([]);
+  const [poolsLoading, setPoolsLoading] = useState(false);
+  const [resolvingKey, setResolvingKey] = useState(null);
+  const [lotteryResult, setLotteryResult] = useState(null);
 
   const displayed = useMemo(() => {
     const base =
@@ -104,7 +112,58 @@ export default function AdminBookings() {
 
   useEffect(() => {
     fetchBookings();
+    fetchPools();
   }, []);
+
+  const fetchPools = async () => {
+    try {
+      setPoolsLoading(true);
+      const token = sessionStorage.getItem("access_token");
+      if (!token) return;
+      const response = await api.get("/lottery/pending", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setPools(response.data?.pools || []);
+    } catch (err) {
+      console.error("Error fetching lottery pools:", err);
+    } finally {
+      setPoolsLoading(false);
+    }
+  };
+
+  const handleResolveLottery = async (pool) => {
+    const token = sessionStorage.getItem("access_token");
+    if (!token) return;
+    const key = `${pool.restaurantId}-${pool.bookingDate}-${pool.timeSlot}`;
+    try {
+      setResolvingKey(key);
+      const response = await api.post(
+        "/lottery/resolve",
+        {
+          restaurantId: pool.restaurantId,
+          bookingDate: pool.bookingDate,
+          timeSlot: pool.timeSlot,
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const data = response.data || {};
+      if (data.winner) {
+        setLotteryResult(
+          `Winner: user #${data.winner.userId} — ${data.winnerChance} chance ` +
+          `(weight ${Math.round(data.winner.weight)}) across ${data.totalEntries} entrant(s).`,
+        );
+      } else {
+        setLotteryResult(data.message || "Resolved — lone entrant did not secure the slot.");
+      }
+      await fetchPools();
+      fetchBookings();
+    } catch (err) {
+      console.error("Failed to resolve lottery:", err);
+      setLotteryResult(err.response?.data?.message || "Failed to resolve lottery.");
+    } finally {
+      setResolvingKey(null);
+    }
+  };
 
   const StatusBadge = ({ status }) => {
     let styleClass = "slick-badge ";
@@ -146,6 +205,18 @@ export default function AdminBookings() {
     );
   };
 
+  const getClientReliabilityStyle = (status) => {
+    switch (status) {
+      case "flagged":
+        return { bg: "#fef2f2", color: "#991b1b", border: "#fca5a5", dot: "#ef4444" };
+      case "at_risk":
+        return { bg: "#fffbeb", color: "#92400e", border: "#fcd34d", dot: "#f59e0b" };
+      case "reliable":
+      default:
+        return { bg: "#ecfdf5", color: "#065f46", border: "#6ee7b7", dot: "#10b981" };
+    }
+  };
+
   const handleStatusUpdate = async (appointmentId, action) => {
     const token = sessionStorage.getItem("access_token");
     if (!token) return;
@@ -178,6 +249,85 @@ export default function AdminBookings() {
         <p className="slick-subtitle">
           Review and manage platform-wide appointment requests.
         </p>
+      </div>
+
+      <div className="slick-table-card mb-3">
+        <div className="p-3 border-bottom border-light d-flex justify-content-between align-items-center">
+          <div className="d-flex align-items-center gap-2">
+            <Shuffle size={15} className="text-slate-muted" />
+            <h6 className="m-0 fw-bold text-dark" style={{ fontSize: "0.85rem" }}>
+              Weighted Lottery — Pending Contests
+            </h6>
+          </div>
+          <button
+            onClick={fetchPools}
+            className="slick-btn-secondary"
+            style={{ padding: "0.35rem 0.7rem", fontSize: "0.75rem" }}
+            disabled={poolsLoading}
+          >
+            {poolsLoading ? (
+              <Spinner animation="border" size="sm" className="text-secondary" style={{ width: "14px", height: "14px" }} />
+            ) : (
+              <RefreshCw size={12} />
+            )}
+          </button>
+        </div>
+        {lotteryResult && (
+          <Alert className="alert-minimal m-3 mb-0 p-2 small">{lotteryResult}</Alert>
+        )}
+        {pools.length === 0 ? (
+          <div className="text-center py-4 slick-empty-state">
+            No pending lottery contests. Run <code>npm run demo:lottery</code> to stage one.
+          </div>
+        ) : (
+          <div className="table-responsive">
+            <table className="table mb-0 slick-table">
+              <thead>
+                <tr>
+                  <th className="ps-4">Restaurant</th>
+                  <th>Date</th>
+                  <th>Slot</th>
+                  <th>Entrants</th>
+                  <th>Resolution</th>
+                  <th className="pe-4 text-end">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pools.map((pool) => {
+                  const key = `${pool.restaurantId}-${pool.bookingDate}-${pool.timeSlot}`;
+                  return (
+                    <tr key={key}>
+                      <td className="ps-4">#{pool.restaurantId}</td>
+                      <td>{pool.bookingDate}</td>
+                      <td className="text-mono-sub">{slotToTime(pool.timeSlot)}</td>
+                      <td>
+                        <span className="slick-badge slick-badge-pending">{pool.competitors}</span>
+                      </td>
+                      <td className="text-muted">
+                        {new Date(pool.resolutionTime).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}{" "}
+                        {pool.closed ? (
+                          <span className="text-danger">• closed</span>
+                        ) : (
+                          <span className="text-success">• open</span>
+                        )}
+                      </td>
+                      <td className="pe-4 text-end">
+                        <button
+                          className="slick-btn-primary"
+                          style={{ padding: "0.35rem 0.7rem", fontSize: "0.75rem" }}
+                          disabled={resolvingKey === key}
+                          onClick={() => handleResolveLottery(pool)}
+                        >
+                          {resolvingKey === key ? "Resolving…" : "Resolve now"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="d-flex gap-2 mb-3">
@@ -229,16 +379,16 @@ export default function AdminBookings() {
                 <th className="ps-4" style={{ cursor: "pointer", userSelect: "none" }} onClick={() => handleSort("client_name")}>
                   Client <SortIcon field="client_name" />
                 </th>
-                <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => handleSort("restaurateur_name")}>
+                <th className="resp-hide-tablet" style={{ cursor: "pointer", userSelect: "none" }} onClick={() => handleSort("restaurateur_name")}>
                   Provider / Shop <SortIcon field="restaurateur_name" />
                 </th>
-                <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => handleSort("service_name")}>
+                <th className="resp-hide-mobile" style={{ cursor: "pointer", userSelect: "none" }} onClick={() => handleSort("service_name")}>
                   Selected Service <SortIcon field="service_name" />
                 </th>
                 <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => handleSort("date")}>
                   Scheduled Timestamp <SortIcon field="date" />
                 </th>
-                <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => handleSort("price")}>
+                <th className="resp-hide-mobile" style={{ cursor: "pointer", userSelect: "none" }} onClick={() => handleSort("price")}>
                   Price <SortIcon field="price" />
                 </th>
                 <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => handleSort("status")} className="pe-4 text-end">
@@ -254,18 +404,46 @@ export default function AdminBookings() {
                     <td className="ps-4">
                       <div className="d-flex align-items-center gap-2">
                         <User size={13} className="text-slate-muted" />
-                        <span className="slick-profile-name">{data.client_name || "Unknown Client"}</span>
+                        <div>
+                          <span className="slick-profile-name">{data.client_name || "Unknown Client"}</span>
+                          {data.client?.reliability_status && (
+                            <div style={{ marginTop: 4 }}>
+                              {(() => {
+                                const st = getClientReliabilityStyle(data.client.reliability_status);
+                                return (
+                                  <span style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "0.3rem",
+                                    padding: "0.15rem 0.5rem",
+                                    borderRadius: "999px",
+                                    fontSize: "0.65rem",
+                                    fontWeight: 700,
+                                    textTransform: "capitalize",
+                                    background: st.bg,
+                                    color: st.color,
+                                    border: `1px solid ${st.border}`,
+                                  }}>
+                                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: st.dot }} />
+                                    {data.client.reliability_status === "flagged" ? "Flagged" : data.client.reliability_status === "at_risk" ? "At Risk" : "Reliable"}
+                                    <span style={{ opacity: 0.8 }}>· {((data.client.penalty_score || 0) * 100).toFixed(0)}%</span>
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
-                    <td>
+                    <td className="resp-hide-tablet">
                       <div className="d-flex align-items-center gap-2">
                         <Landmark size={13} className="text-slate-muted" />
                         <span className="text-secondary fw-medium">{data.restaurateur_name || "Merchant Hub"}</span>
                       </div>
                     </td>
-                    <td>
+                    <td className="resp-hide-mobile">
                       <div className="d-flex align-items-center gap-2">
-                        <Scissors size={13} className="text-slate-muted" />
+                        <UtensilsCrossed size={13} className="text-slate-muted" />
                         <span className="text-dark fw-medium">{data.service_name || "Service Item Deleted"}</span>
                       </div>
                     </td>
@@ -275,7 +453,7 @@ export default function AdminBookings() {
                         {data.date ? new Date(data.date).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "—"}
                       </div>
                     </td>
-                    <td className="fw-semibold text-dark">Rs. {data.price || 0}</td>
+                    <td className="resp-hide-mobile fw-semibold text-dark">Rs. {data.price || 0}</td>
                     <td className="pe-4 text-end">
                       <StatusBadge status={data.status} />
                     </td>

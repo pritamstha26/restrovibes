@@ -5,21 +5,25 @@ import {
   getLotteryStatus,
   getAlternatives,
   manualResolve,
+  getPendingPools,
 } from "../controllers/lotteryController.js";
 
 const router = express.Router();
 
 router.use(authenticateToken);
 
-router.post("/enter", enterLottery);
-router.get("/status", getLotteryStatus);
-router.post("/alternatives", getAlternatives);
-
-router.post("/resolve", (req, res, next) => {
+const adminOnly = (req, res, next) => {
   if (req.user.role !== "admin") {
     return res.status(403).json({ message: "Admin access required" });
   }
   next();
-}, manualResolve);
+};
+
+router.post("/enter", enterLottery);
+router.get("/status", getLotteryStatus);
+router.post("/alternatives", getAlternatives);
+
+router.get("/pending", adminOnly, getPendingPools);
+router.post("/resolve", adminOnly, manualResolve);
 
 export default router;

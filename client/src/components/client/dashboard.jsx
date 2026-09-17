@@ -495,6 +495,8 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [allServiceRequests, setAllServiceRequests] = useState([]);
   const [appointments, setAppointments] = useState([]);
+  const [reliability, setReliability] = useState(null);
+  const [locationInfo, setLocationInfo] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
@@ -541,6 +543,40 @@ const Dashboard = () => {
       }
     } catch (error) {
       console.error("Error fetching services:", error);
+    }
+  };
+
+  const fetchReliability = async () => {
+    try {
+      const token = sessionStorage.getItem("access_token");
+      if (!token) return;
+      const decoded = jwtDecode(token);
+      const userId = decoded.id;
+      if (!userId) return;
+
+      const response = await api.get(`/appointments/client/${userId}/risk-profile`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.status === 200) {
+        setReliability(response.data?.data || response.data);
+      }
+    } catch (error) {
+      console.error("Error fetching reliability profile:", error);
+    }
+  };
+
+  const fetchCurrentLocation = async () => {
+    try {
+      const token = sessionStorage.getItem("access_token");
+      if (!token) return;
+      const response = await api.get("/location/current", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.status === 200) {
+        setLocationInfo(response.data?.data || null);
+      }
+    } catch (error) {
+      console.error("Error fetching current location:", error);
     }
   };
 
@@ -660,6 +696,8 @@ const Dashboard = () => {
   useEffect(() => {
     fetchServiceRequests();
     fetchAppointments();
+    fetchReliability();
+    fetchCurrentLocation();
   }, []);
 
   usePolling(() => fetchAppointments(true), 5000);
@@ -668,12 +706,31 @@ const Dashboard = () => {
     <div className="v-dashboard-root">
       {/* Scope Subheader Nav */}
       <div className="v-nav-scope">
-        <div className="v-scope-container">
+        <div className="v-scope-container v-scope-container--with-loc">
           <div className="v-scope-switcher">
             <span className="v-org">Personal Space</span>
             <span className="v-slash">/</span>
             <span className="v-project">Overview</span>
           </div>
+          {locationInfo && (
+            <div className="v-loc-pin-wrap">
+              <span className="v-loc-pin" aria-hidden="true">
+                <span className="v-loc-pin__body" />
+                <span className="v-loc-pin__tail" />
+              </span>
+              <span className="v-loc-pin__label">
+                <span className="v-loc-pin__name">
+                  {locationInfo.location_name ||
+                    `${Number(locationInfo.latitude).toFixed(4)}, ${Number(locationInfo.longitude).toFixed(4)}`}
+                </span>
+                {locationInfo.latitude != null && (
+                  <span className="v-loc-pin__coords">
+                    {Number(locationInfo.latitude).toFixed(4)}, {Number(locationInfo.longitude).toFixed(4)}
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -700,6 +757,36 @@ const Dashboard = () => {
             <div className="v-metric-title">ACTIVE ARRANGEMENTS</div>
             <div className="v-metric-num text-info">{stats.appointments}</div>
           </div>
+          {reliability && (
+            <div className="v-metric-card" style={{ borderColor: reliability.reliability_status === "flagged" ? "#fca5a5" : reliability.reliability_status === "at_risk" ? "#fcd34d" : "#6ee7b7" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                                              <div className="v-metric-s-vis-avatar">PENALTY SCORE</div>
+
+                <div className="v-metric-s-vis-avatar" style={{ color: reliability.reliability_status === "flagged" ? "#dc2626" : reliability.reliability_status === "at_risk" ? "#d97706" : "#059669" }}>
+                  {((reliability.penalty_score || 0) * 100).toFixed(0)}%
+                </div>
+
+                <span className={`v-rel-status-badge v-rel-badge-${reliability.reliability_status || "reliable"}`}>
+                  <span className="v-rel-badge-dot" style={{ background: "currentColor" }} />
+                  {reliability.reliability_status === "flagged" ? "Flagged" : reliability.reliability_status === "at_risk" ? "At Risk" : "Reliable"}
+                </span>
+              </div>
+              <div className="v-rel-stats">
+                <div className="v-rel-stat">
+                  Completed: <strong style={{ color: "#059669" }}>{reliability.total_completed_bookings || 0}</strong>
+                </div>
+                <div className="v-rel-stat">
+                  No-Shows: <strong style={{ color: "#dc2626" }}>{reliability.total_no_shows || 0}</strong>
+                </div>
+                <div className="v-rel-stat">
+                  Late Arrivals: <strong style={{ color: "#d97706" }}>{reliability.total_late_arrivals || 0}</strong>
+                </div>
+                <div className="v-rel-stat">
+                  Late Cancels: <strong style={{ color: "#f97316" }}>{reliability.total_late_cancellations || 0}</strong>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {showAlert && (

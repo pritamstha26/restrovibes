@@ -489,6 +489,18 @@ export const ClientList = () => {
     return colors[charCode % colors.length];
   };
 
+  const getReliabilityBadge = (status) => {
+    switch (status) {
+      case "flagged":
+        return { bg: "#fef2f2", color: "#991b1b", border: "#fca5a5", dot: "#ef4444" };
+      case "at_risk":
+        return { bg: "#fffbeb", color: "#92400e", border: "#fcd34d", dot: "#f59e0b" };
+      case "reliable":
+      default:
+        return { bg: "#ecfdf5", color: "#065f46", border: "#6ee7b7", dot: "#10b981" };
+    }
+  };
+
   return (
     <div className="slick-workspace p-4">
       {/* Header Block */}
@@ -515,9 +527,7 @@ export const ClientList = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </InputGroup>
-        <Button variant="none" className="slick-btn-secondary d-flex align-items-center gap-2">
-          <SlidersHorizontal size={14} /> Filter
-        </Button>
+        
       </div>
 
       {/* Main Table Container Wrapper */}
@@ -527,8 +537,10 @@ export const ClientList = () => {
             <tr>
               <th className="ps-4 text-center" style={{ width: '70px' }}>#</th>
               <th>Client Identity</th>
-              <th>Email Address</th>
-              <th>Phone Number</th>
+              <th className="resp-hide-mobile">Email Address</th>
+              <th className="resp-hide-tablet">Phone Number</th>
+              <th>Reliability</th>
+              <th>Penalty Score</th>
               <th className="pe-4 text-end" style={{ width: '130px' }}>Controls</th>
             </tr>
           </thead>
@@ -553,10 +565,49 @@ export const ClientList = () => {
                         </div>
                       </div>
                     </td>
-                    <td>
+                    <td className="resp-hide-mobile">
                       <span className="slick-email">{client.email}</span>
                     </td>
-                    <td className="text-secondary fw-medium">{client.phone_number || "—"}</td>
+                    <td className="resp-hide-tablet text-secondary fw-medium">{client.phone_number || "—"}</td>
+                    <td>
+                      {(() => {
+                        const badge = getReliabilityBadge(client.reliability_status);
+                        return (
+                          <span style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.4rem",
+                            padding: "0.3rem 0.65rem",
+                            borderRadius: "999px",
+                            fontSize: "0.72rem",
+                            fontWeight: 700,
+                            textTransform: "capitalize",
+                            background: badge.bg,
+                            color: badge.color,
+                            border: `1px solid ${badge.border}`,
+                          }}>
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: badge.dot }} />
+                            {client.reliability_status === "flagged" ? "Flagged" : client.reliability_status === "at_risk" ? "At Risk" : "Reliable"}
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <div style={{ flex: 1, maxWidth: 80, height: 5, borderRadius: 3, background: "#e2e8f0", overflow: "hidden" }}>
+                          <div style={{
+                            height: "100%",
+                            borderRadius: 3,
+                            background: (client.penalty_score || 0) > 0.4 ? "#ef4444" : (client.penalty_score || 0) > 0.15 ? "#f59e0b" : "#10b981",
+                            width: `${Math.min((client.penalty_score || 0) * 100, 100)}%`,
+                            transition: "width 0.3s",
+                          }} />
+                        </div>
+                        <span style={{ fontFamily: "monospace", fontSize: "0.78rem", fontWeight: 600, color: "#475569", minWidth: 32 }}>
+                          {((client.penalty_score || 0) * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                    </td>
                     <td className="pe-4 text-end">
                       <div className="d-flex justify-content-end gap-2">
                         <Button variant="none" className="slick-action-btn slick-edit-btn" onClick={() => handleEditClient(client)}>
@@ -572,7 +623,7 @@ export const ClientList = () => {
               })
             ) : (
               <tr>
-                <td colSpan="5" className="text-center py-5 slick-empty-state">
+                <td colSpan="7" className="text-center py-5 slick-empty-state">
                   No registered accounts matched the specified search criteria.
                 </td>
               </tr>

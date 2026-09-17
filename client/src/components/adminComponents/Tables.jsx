@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Table, Button, Modal, Form, Row, Col, Card, Spinner, Alert } from "react-bootstrap";
-import { Plus, Edit2, Trash2, Store } from "lucide-react";
+import { Table, Button, Modal, Form, Row, Col, Card, Spinner, Alert, InputGroup } from "react-bootstrap";
+import { Plus, Edit2, Trash2, Store, Search } from "lucide-react";
 import { jwtDecode } from "jwt-decode";
 import "./admin-panel.css";
 import api from "../../apis/api";
@@ -8,6 +8,7 @@ import api from "../../apis/api";
 const Tables = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, _setShowEditModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
   const [selectedTable, setSelectedTable] = useState(null);
   const [data, setData] = useState([]);
   const [owners, setOwners] = useState([]);
@@ -130,6 +131,23 @@ const Tables = () => {
     }));
   }, [data, ownerMap]);
 
+  const ownerLocMap = useMemo(() => {
+    return owners.reduce((accumulator, owner) => {
+      accumulator[owner.id] = owner.location_name || "";
+      return accumulator;
+    }, {});
+  }, [owners]);
+
+  const filteredGroups = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return groupedTables;
+    return groupedTables.filter((g) => {
+      const label = g.ownerLabel.toLowerCase();
+      const loc = (ownerLocMap[Number(g.ownerKey)] || "").toLowerCase();
+      return label.includes(q) || loc.includes(q);
+    });
+  }, [groupedTables, searchTerm, ownerLocMap]);
+
   return (
     <div className="slick-workspace p-4">
       <div className="slick-header d-flex justify-content-between align-items-end mb-4">
@@ -142,15 +160,33 @@ const Tables = () => {
         </Button>
       </div>
 
+      {/* Slick Control Toolbar */}
+      <div className="slick-toolbar d-flex gap-3 mb-4">
+        <InputGroup className="slick-search-group flex-grow-1">
+          <InputGroup.Text className="slick-search-icon">
+            <Search size={16} />
+          </InputGroup.Text>
+          <Form.Control
+            className="slick-search-input"
+            placeholder="Search restaurants by name..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </InputGroup>
+      </div>
+
       {error && <Alert variant="danger" className="mb-4">{error}</Alert>}
 
-      {groupedTables.length > 0 ? (
-        groupedTables.map((group) => (
+      {filteredGroups.length > 0 ? (
+        filteredGroups.map((group) => (
           <Card key={group.ownerKey} className="slick-table-card mb-4 border-0">
             <Card.Header className="bg-transparent border-0 px-4 pt-4 pb-3 d-flex align-items-center justify-content-between">
               <div>
-                <h3 className="h5 mb-1">{group.ownerLabel}</h3>
-                <p className="text-muted mb-0">{group.tables.length} table{group.tables.length === 1 ? "" : "s"}</p>
+                <h3 className="h5 mb-1">{ownerLocMap[Number(group.ownerKey)] || group.ownerLabel}</h3>
+                <p className="text-muted mb-0">
+                  {ownerLocMap[Number(group.ownerKey)] ? `${group.ownerLabel} · ` : ""}
+                  {group.tables.length} table{group.tables.length === 1 ? "" : "s"}
+                </p>
               </div>
             </Card.Header>
             <Card.Body className="pt-0 px-0">
@@ -204,7 +240,7 @@ const Tables = () => {
         ))
       ) : (
         <div className="slick-table-card text-center py-5 slick-empty-state">
-          {loading ? <Spinner animation="border" size="sm" /> : "No tables configured across outlets."}
+          {loading ? <Spinner animation="border" size="sm" /> : searchTerm.trim() ? `No restaurants match "${searchTerm.trim()}".` : "No tables configured across outlets."}
         </div>
       )}
 

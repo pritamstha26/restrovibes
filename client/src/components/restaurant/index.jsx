@@ -1077,12 +1077,14 @@ import {
 import {
   FaTachometerAlt,
   FaCalendarAlt,
-  FaCut,
   FaCog,
   FaSignOutAlt,
   FaChair,
   FaUsers,
+  FaBars,
+  FaTimes,
 } from "react-icons/fa";
+import { UtensilsCrossed } from "lucide-react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./restaurant.css";
 import api from "../../apis/api";
@@ -1096,11 +1098,14 @@ import TablesTab from "./tabs/TablesTab";
 import LocationSetup from "./LocationSetup";
 import { useNavigate, useParams, NavLink } from "react-router-dom";
 import { jwtDecode } from "jwt-decode";
+import useIsMobile from "../../hooks/useIsMobile";
 
 export default function RestaurantDashboard() {
   const navigate = useNavigate();
   const { tab } = useParams();
   const activeTab = tab || "dashboard";
+  const isMobile = useIsMobile(768);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   // Global Context Alert System
@@ -1225,6 +1230,11 @@ export default function RestaurantDashboard() {
   }, [fetchAppointments, fetchProfile, getServices]);
 
   usePolling(() => fetchAppointments(true), 5000);
+
+  // Close the mobile drawer when crossing to desktop
+  useEffect(() => {
+    if (!isMobile) setMenuOpen(false);
+  }, [isMobile]);
 
   // Sync profile details when loaded
   useEffect(() => {
@@ -1448,18 +1458,40 @@ export default function RestaurantDashboard() {
         </div>
       )}
 
+      {/* Hamburger + backdrop — mobile only, hidden while drawer is open */}
+      {isMobile && !menuOpen && (
+        <button
+          className="res-hamburger"
+          onClick={() => setMenuOpen((o) => !o)}
+          aria-label="Open navigation"
+        >
+          <FaBars size={17} />
+        </button>
+      )}
+      <div className={`res-backdrop ${menuOpen ? "is-visible" : ""}`} onClick={() => setMenuOpen(false)} />
+
       {/* Modern Matte Dark Sidebar Framework */}
-      <div className="matte-sidebar">
+      <div className={`matte-sidebar ${menuOpen ? "res-sidebar-open" : ""}`}>
         <div>
           <div className="sidebar-brand-block">
-            <FaCut className="brand-logo-icon" />
+            <UtensilsCrossed className="brand-logo-icon" size={20} />
             <h5 className="brand-title-text">RestroVibe</h5>
+            {isMobile && (
+              <button
+                type="button"
+                className="res-close-button"
+                onClick={() => setMenuOpen(false)}
+                aria-label="Close navigation"
+              >
+                <FaTimes size={15} />
+              </button>
+            )}
           </div>
           <Nav className="flex-column gap-2">
             {[
               { id: "dashboard", label: "Dashboard Hub", icon: FaTachometerAlt },
               { id: "appointments", label: "Bookings Registry", icon: FaCalendarAlt, badge: appointments.filter(a => a.status === "pending").length },
-              { id: "services", label: "Service Tiers", icon: FaCut },
+              { id: "services", label: "Service Tiers", icon: UtensilsCrossed },
               { id: "tables", label: "Tables & Views", icon: FaChair },
               { id: "clients", label: "Client History", icon: FaUsers },
               { id: "settings", label: "Workspace Config", icon: FaCog },
@@ -1469,6 +1501,7 @@ export default function RestaurantDashboard() {
                 as={NavLink}
                 to={`/restaurateurs/${tab.id}`}
                 className={`sidebar-nav-item ${activeTab === tab.id ? "is-active" : ""}`}
+                onClick={() => setMenuOpen(false)}
               >
                 <div className="d-flex align-items-center gap-3">
                   <tab.icon className="nav-icon-element" />
@@ -1488,7 +1521,7 @@ export default function RestaurantDashboard() {
       <div className="dashboard-content-canvas">
         <Navbar className="canvas-header-navbar">
           <span className="user-session-indicator">
-            Active Operator: <strong className="text-capitalize">{profileForm.first_name || "Merchant"}</strong>
+            Venue: <strong className="text-capitalize">{restaurateurInfo?.location_name || "Unnamed"}</strong>
           </span>
           <span className="header-date-string">{new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</span>
         </Navbar>

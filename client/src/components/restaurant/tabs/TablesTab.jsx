@@ -1,7 +1,18 @@
 import React, { useState, useEffect } from "react";
-import { Card, Form, Button, Alert, Spinner, Table, Modal } from "react-bootstrap";
-import { Upload, X, ImageIcon } from "lucide-react";
+import { Form, Alert, Spinner, Modal, Row, Col } from "react-bootstrap";
+import {
+  Upload,
+  X,
+  ImageIcon,
+  Plus,
+  Edit2,
+  Trash2,
+  Armchair,
+  Users,
+  CheckCircle2,
+} from "lucide-react";
 import api from "../../../apis/api";
+
 export default function TablesTab({ restaurateurId }) {
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,7 +33,7 @@ export default function TablesTab({ restaurateurId }) {
       if (response.data.success) {
         setTables(response.data.data || []);
       }
-    } catch (err) {
+    } catch {
       setError("Failed to load tables");
     } finally {
       setLoading(false);
@@ -128,164 +139,266 @@ export default function TablesTab({ restaurateurId }) {
 
   if (loading) {
     return (
-      <Card className="matte-card">
-        <Card.Body className="text-center py-5">
-          <Spinner animation="border" size="sm" />
-          <p className="mt-2 text-muted small">Loading tables...</p>
-        </Card.Body>
-      </Card>
+      <div className="matte-card text-center py-5">
+        <Spinner animation="border" size="sm" />
+        <p className="mt-2 text-muted small mb-0">Loading tables...</p>
+      </div>
     );
   }
 
   const totalCapacity = tables.reduce((sum, t) => sum + Number(t.capacity), 0);
+  const activeTables = tables.filter((t) => t.is_active).length;
+  const imageCount = tables.reduce((sum, t) => sum + (t.images?.length || 0), 0);
+
+  const kpis = [
+    { label: "Total Tables", value: tables.length, icon: Armchair },
+    { label: "Total Capacity", value: totalCapacity, icon: Users },
+    { label: "Active Tables", value: activeTables, icon: CheckCircle2 },
+    { label: "View Images", value: imageCount, icon: ImageIcon },
+  ];
 
   return (
     <div className="d-grid gap-4">
-      <Card className="matte-card">
-        <Card.Header className="matte-card-header">
-          <div className="d-flex justify-content-between align-items-center">
-            <div>
-              <h5 className="m-0 fw-bold header-title">Tables & Views</h5>
-              <small className="text-muted">Manage tables and upload view images for each table</small>
-            </div>
-            <Button variant="primary" size="sm" onClick={() => setShowAddModal(true)}>Add Table</Button>
+      {/* Slick Header Block */}
+      <div className="matte-card view-header-card">
+        <div className="view-header-inner">
+          <div>
+            <h2 className="view-header-title">Tables &amp; Views</h2>
+            <p className="view-header-subtitle">
+              Configure seating inventory and curate ambiance photography for each table
+            </p>
           </div>
-        </Card.Header>
-        <Card.Body className="p-4">
-          {error && <Alert variant="danger" dismissible onClose={() => setError("")}>{error}</Alert>}
-          {success && <Alert variant="success" dismissible onClose={() => setSuccess("")}>{success}</Alert>}
+          <button type="button" className="slick-add-btn" onClick={() => setShowAddModal(true)}>
+            <Plus size={15} /> Add Table
+          </button>
+        </div>
+      </div>
 
-          <div className="mb-3">
-            <strong>Total Capacity:</strong>{" "}
-            {tables.length > 0 ? `${totalCapacity} guests across ${tables.length} tables` : "No tables configured"}
-          </div>
+      {/* KPI Metrics Strip */}
+      <Row className="g-3">
+        {kpis.map((kpi) => {
+          const KpiIcon = kpi.icon;
+          return (
+            <Col xs={6} md={3} key={kpi.label}>
+              <div className="view-kpi">
+                <div className="view-kpi-icon">
+                  <KpiIcon size={19} />
+                </div>
+                <div>
+                  <div className="view-kpi-value">{kpi.value}</div>
+                  <div className="view-kpi-label">{kpi.label}</div>
+                </div>
+              </div>
+            </Col>
+          );
+        })}
+      </Row>
 
-          {tables.length === 0 ? (
-            <Alert variant="info">No tables yet. Click "Add Table" to create your first table.</Alert>
-          ) : (
-            <div className="d-flex flex-column gap-4">
-              {tables.map((table) => (
-                <Card key={table.id} className="border">
-                  <Card.Body className="p-3">
-                    <div className="d-flex justify-content-between align-items-start mb-3">
-                      <div>
-                        <h6 className="m-0">Table {table.table_number}</h6>
-                        <small className="text-muted">Capacity: {table.capacity} guests</small>
-                      </div>
-                      <div className="d-flex gap-2">
-                        <span className={`badge ${table.is_active ? "bg-success" : "bg-secondary"}`}>
-                          {table.is_active ? "Active" : "Inactive"}
-                        </span>
-                        <Button variant="outline-primary" size="sm" onClick={() => setEditingTable(table)}>Edit</Button>
-                        <Button variant="outline-danger" size="sm" onClick={() => handleDeleteTable(table.id, table.table_number)}>Delete</Button>
-                      </div>
+      {error && (
+        <Alert variant="danger" dismissible onClose={() => setError("")}>
+          {error}
+        </Alert>
+      )}
+      {success && (
+        <Alert variant="success" dismissible onClose={() => setSuccess("")}>
+          {success}
+        </Alert>
+      )}
+
+      {/* Table Cards Grid */}
+      {tables.length === 0 ? (
+        <div className="matte-card view-empty-state">
+          <Armchair size={30} className="mb-2" />
+          <p className="mb-0">No tables yet. Click "Add Table" to create your first table.</p>
+        </div>
+      ) : (
+        <div className="view-grid">
+          {tables.map((table) => (
+            <div key={table.id} className="view-card">
+              <div className="view-card-head">
+                <div className="view-identity">
+                  <div className="view-avatar">
+                    <Armchair size={18} />
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="view-name">Table {table.table_number}</div>
+                    <div className="view-meta">
+                      TBL-{table.id} · {table.capacity} guests
                     </div>
+                  </div>
+                </div>
+                <div className="view-actions">
+                  <span
+                    className={`status-flag ${
+                      table.is_active ? "status-flag-completed" : "status-flag-cancelled"
+                    }`}
+                  >
+                    {table.is_active ? "Active" : "Inactive"}
+                  </span>
+                  <button
+                    type="button"
+                    className="view-icon-btn edit"
+                    onClick={() => setEditingTable(table)}
+                    aria-label={`Edit table ${table.table_number}`}
+                  >
+                    <Edit2 size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className="view-icon-btn delete"
+                    onClick={() => handleDeleteTable(table.id, table.table_number)}
+                    aria-label={`Delete table ${table.table_number}`}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
 
-                    <div className="border-top pt-3">
-                      <div className="d-flex align-items-center justify-content-between mb-2">
-                        <small className="fw-semibold d-flex align-items-center gap-1">
-                          <ImageIcon size={14} /> View Images
-                        </small>
-                        <div>
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            multiple
-                            id={`img-upload-${table.id}`}
-                            style={{ display: "none" }}
-                            onChange={(e) => handleImageUpload(table.id, e.target.files)}
-                          />
-                          <label
-                            htmlFor={`img-upload-${table.id}`}
-                            className="btn btn-outline-secondary btn-sm mb-0 d-inline-flex align-items-center gap-1"
-                            style={{ cursor: uploadingId === table.id ? "wait" : "pointer" }}
-                          >
-                            {uploadingId === table.id ? <Spinner size="sm" /> : <Upload size={14} />}
-                            {uploadingId === table.id ? "Uploading..." : "Add"}
-                          </label>
-                        </div>
+              <div className="view-gallery">
+                <div className="view-gallery-head">
+                  <span className="view-gallery-label">
+                    <ImageIcon size={14} /> View Gallery
+                    {table.images?.length > 0 && ` (${table.images.length})`}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    id={`img-upload-${table.id}`}
+                    style={{ display: "none" }}
+                    onChange={(e) => handleImageUpload(table.id, e.target.files)}
+                  />
+                  <label
+                    htmlFor={`img-upload-${table.id}`}
+                    className="view-upload-btn"
+                    style={{ cursor: uploadingId === table.id ? "wait" : "pointer" }}
+                  >
+                    {uploadingId === table.id ? <Spinner size="sm" /> : <Upload size={13} />}
+                    {uploadingId === table.id ? "Uploading..." : "Add"}
+                  </label>
+                </div>
+
+                {table.images && table.images.length > 0 ? (
+                  <div className="view-image-grid">
+                    {table.images.map((img, idx) => (
+                      <div key={idx} className="view-img-tile">
+                        <img
+                          src={`${API_BASE}${img}`}
+                          alt={`Table ${table.table_number} view ${idx + 1}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const parts = img.split("/");
+                            handleImageDelete(table.id, parts[parts.length - 1]);
+                          }}
+                          className="view-img-del"
+                          aria-label="Delete image"
+                        >
+                          <X size={12} />
+                        </button>
                       </div>
-
-                      {table.images && table.images.length > 0 ? (
-                        <div className="d-flex flex-wrap gap-2">
-                          {table.images.map((img, idx) => (
-                            <div key={idx} className="position-relative" style={{ width: 120, height: 90, borderRadius: 6, overflow: "hidden", border: "1px solid #dee2e6" }}>
-                              <img
-                                src={`${API_BASE}${img}`}
-                                alt={`Table ${table.table_number} view ${idx + 1}`}
-                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const parts = img.split("/");
-                                  handleImageDelete(table.id, parts[parts.length - 1]);
-                                }}
-                                className="position-absolute top-0 end-0 m-1 d-flex align-items-center justify-content-center"
-                                style={{ width: 22, height: 22, borderRadius: "50%", background: "rgba(0,0,0,0.6)", border: "none", color: "#fff", cursor: "pointer", padding: 0 }}
-                              >
-                                <X size={12} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <small className="text-muted">No images uploaded yet</small>
-                      )}
-                    </div>
-                  </Card.Body>
-                </Card>
-              ))}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="view-img-empty">No view images uploaded yet</div>
+                )}
+              </div>
             </div>
-          )}
-        </Card.Body>
-      </Card>
+          ))}
+        </div>
+      )}
 
       {/* Add Table Modal */}
-      <Modal show={showAddModal} onHide={() => setShowAddModal(false)} centered>
-        <Modal.Header closeButton><Modal.Title>Add Table</Modal.Title></Modal.Header>
-        <Modal.Body>
+      <Modal show={showAddModal} onHide={() => setShowAddModal(false)} centered className="matte-modal-ui">
+        <Modal.Header closeButton className="border-0 pb-0">
+          <Modal.Title className="modal-heading">Add New Table</Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="pt-3">
           <Form.Group className="mb-3">
-            <Form.Label>Table Number</Form.Label>
-            <Form.Control type="text" placeholder="e.g. A1, B2, 1, 2, 3" value={formData.table_number} onChange={(e) => setFormData({ ...formData, table_number: e.target.value })} />
+            <Form.Label className="matte-label">Table Number</Form.Label>
+            <Form.Control
+              type="text"
+              className="matte-input"
+              placeholder="e.g. A1, B2, 1, 2, 3"
+              value={formData.table_number}
+              onChange={(e) => setFormData({ ...formData, table_number: e.target.value })}
+            />
           </Form.Group>
           <Form.Group className="mb-3">
-            <Form.Label>Capacity (guests)</Form.Label>
-            <Form.Control type="number" min="1" value={formData.capacity} onChange={(e) => setFormData({ ...formData, capacity: Number(e.target.value) })} />
+            <Form.Label className="matte-label">Capacity (guests)</Form.Label>
+            <Form.Control
+              type="number"
+              min="1"
+              className="matte-input"
+              value={formData.capacity}
+              onChange={(e) => setFormData({ ...formData, capacity: Number(e.target.value) })}
+            />
           </Form.Group>
           <Form.Group className="mb-3">
-            <Form.Check type="checkbox" label="Active" checked={formData.is_active} onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })} />
+            <Form.Check
+              type="checkbox"
+              label="Active"
+              checked={formData.is_active}
+              onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+            />
           </Form.Group>
         </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowAddModal(false)}>Cancel</Button>
-          <Button variant="primary" onClick={handleAddTable} disabled={saving}>{saving ? "Saving..." : "Add Table"}</Button>
+        <Modal.Footer className="border-0 pt-0">
+          <button type="button" className="matte-modal-close" onClick={() => setShowAddModal(false)}>
+            Cancel
+          </button>
+          <button type="button" className="matte-modal-submit" onClick={handleAddTable} disabled={saving}>
+            {saving ? "Saving..." : "Add Table"}
+          </button>
         </Modal.Footer>
       </Modal>
 
       {/* Edit Table Modal */}
-      <Modal show={!!editingTable} onHide={() => setEditingTable(null)} centered>
-        <Modal.Header closeButton><Modal.Title>Edit Table</Modal.Title></Modal.Header>
-        <Modal.Body>
+      <Modal show={!!editingTable} onHide={() => setEditingTable(null)} centered className="matte-modal-ui">
+        <Modal.Header closeButton className="border-0 pb-0">
+          <Modal.Title className="modal-heading">Modify Table</Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="pt-3">
           {editingTable && (
             <>
               <Form.Group className="mb-3">
-                <Form.Label>Table Number</Form.Label>
-                <Form.Control type="text" value={editingTable.table_number} onChange={(e) => setEditingTable({ ...editingTable, table_number: e.target.value })} />
+                <Form.Label className="matte-label">Table Number</Form.Label>
+                <Form.Control
+                  type="text"
+                  className="matte-input"
+                  value={editingTable.table_number}
+                  onChange={(e) => setEditingTable({ ...editingTable, table_number: e.target.value })}
+                />
               </Form.Group>
               <Form.Group className="mb-3">
-                <Form.Label>Capacity (guests)</Form.Label>
-                <Form.Control type="number" min="1" value={editingTable.capacity} onChange={(e) => setEditingTable({ ...editingTable, capacity: Number(e.target.value) })} />
+                <Form.Label className="matte-label">Capacity (guests)</Form.Label>
+                <Form.Control
+                  type="number"
+                  min="1"
+                  className="matte-input"
+                  value={editingTable.capacity}
+                  onChange={(e) => setEditingTable({ ...editingTable, capacity: Number(e.target.value) })}
+                />
               </Form.Group>
               <Form.Group className="mb-3">
-                <Form.Check type="checkbox" label="Active" checked={editingTable.is_active} onChange={(e) => setEditingTable({ ...editingTable, is_active: e.target.checked })} />
+                <Form.Check
+                  type="checkbox"
+                  label="Active"
+                  checked={editingTable.is_active}
+                  onChange={(e) => setEditingTable({ ...editingTable, is_active: e.target.checked })}
+                />
               </Form.Group>
             </>
           )}
         </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setEditingTable(null)}>Cancel</Button>
-          <Button variant="primary" onClick={handleEditTable} disabled={saving}>{saving ? "Saving..." : "Save Changes"}</Button>
+        <Modal.Footer className="border-0 pt-0">
+          <button type="button" className="matte-modal-close" onClick={() => setEditingTable(null)}>
+            Discard
+          </button>
+          <button type="button" className="matte-modal-submit" onClick={handleEditTable} disabled={saving}>
+            {saving ? "Saving..." : "Save Changes"}
+          </button>
         </Modal.Footer>
       </Modal>
     </div>

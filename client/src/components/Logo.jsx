@@ -1,13 +1,15 @@
-import React, { Fragment } from "react";
-import { Image } from "react-bootstrap";
-import restaurantLogo from "../assets/Logo.png";
-//
-export default function Logo() {
+import React from "react";
+import { UtensilsCrossed } from "lucide-react";
+
+export default function Logo({ size = 96 }) {
   return (
-    <Image
-      src={restaurantLogo}
-      className="rounded rounded-circle  "
-      style={{ width: "100px" }}
-    />
+    <div
+      className="app-logo-badge"
+      style={{ width: size, height: size }}
+      role="img"
+      aria-label="RestroVibe logo"
+    >
+      <UtensilsCrossed size={size * 0.5} strokeWidth={2} />
+    </div>
   );
 }

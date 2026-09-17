@@ -2,6 +2,9 @@ import { Op } from "sequelize";
 import sequelize from "../config/db.js";
 import { LotteryPoolModel } from "../models/model.js";
 import { resolveLottery } from "../controllers/lotteryController.js";
+import { getLotteryResolutionTime } from "../utils/lotteryTime.js";
+
+const RESOLUTION_HORIZON_DAYS = Number(process.env.LOTTERY_RESOLUTION_HORIZON_DAYS) || 14;
 
 class LotteryScheduler {
   constructor() {
@@ -24,12 +27,12 @@ class LotteryScheduler {
 
   async processPendingLotteries() {
     try {
+      const now = new Date();
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(23, 59, 59, 999);
+      const horizon = new Date(today);
+      horizon.setDate(horizon.getDate() + RESOLUTION_HORIZON_DAYS);
 
       const pendingSlots = await sequelize.query(
         `
@@ -37,14 +40,14 @@ class LotteryScheduler {
         FROM lottery_pool
         WHERE status = 'pending'
           AND booking_date >= :today
-          AND booking_date <= :tomorrow
+          AND booking_date <= :horizon
         GROUP BY restaurant_id, booking_date, preferred_time_slot
-        HAVING COUNT(*) >= 2
+        HAVING COUNT(*) >= 1
         `,
         {
           replacements: {
             today: today.toISOString().slice(0, 10),
-            tomorrow: tomorrow.toISOString().slice(0, 10),
+            horizon: horizon.toISOString().slice(0, 10),
           },
           type: sequelize.QueryTypes.SELECT,
         },
@@ -52,6 +55,13 @@ class LotteryScheduler {
 
       for (const slot of pendingSlots) {
         try {
+          // Only draw slots whose deadline has passed; slots still open keep accepting entries.
+          const resolutionTime = getLotteryResolutionTime(
+            slot.booking_date,
+            slot.preferred_time_slot,
+          );
+          if (now.getTime() < resolutionTime.getTime()) continue;
+
           const result = await resolveLottery(
             slot.restaurant_id,
             slot.booking_date,
@@ -59,9 +69,14 @@ class LotteryScheduler {
           );
 
           if (result) {
+            const slots = result.groupedSlots?.length
+              ? ` grouped slots [${result.groupedSlots.join(", ")}]`
+              : "";
+            const outcome = result.winner
+              ? `winner user ${result.winner.userId} with chance ${result.winnerChance}`
+              : `no winner — slot still occupied`;
             console.log(
-              `[Lottery] Resolved restaurant ${slot.restaurant_id} on ${slot.booking_date} slot ${slot.preferred_time_slot}: ` +
-              `winner user ${result.winner.userId} with chance ${result.winnerChance}`,
+              `[Lottery] Resolved restaurant ${slot.restaurant_id} on ${slot.booking_date} slot ${slot.preferred_time_slot}${slots}: ${outcome}`,
             );
           }
         } catch (error) {

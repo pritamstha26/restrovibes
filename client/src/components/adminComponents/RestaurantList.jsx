@@ -525,9 +525,7 @@ export const RestaurantList = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </InputGroup>
-        <Button variant="none" className="slick-btn-secondary d-flex align-items-center gap-2">
-          <SlidersHorizontal size={14} /> Filter
-        </Button>
+        
       </div>
 
       {/* Modern Data Canvas Card */}

@@ -301,8 +301,8 @@
 
 // export default Services;
 import { useEffect, useMemo, useState } from "react";
-import { Table, Button, Modal, Form, Row, Col, Card } from "react-bootstrap";
-import { Edit2, Plus, Trash2, Scissors, Layers, Armchair } from "lucide-react";
+import { Table, Button, Modal, Form, Row, Col, Card, InputGroup } from "react-bootstrap";
+import { Edit2, Plus, Trash2, Scissors, Layers, Armchair, Search } from "lucide-react";
 import { jwtDecode } from "jwt-decode";
 
 import "./admin-panel.css";
@@ -311,6 +311,8 @@ import api from "../../apis/api";
 const Services = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+
+  const [searchTerm, setSearchTerm] = useState("");
 
   const [selectedService, setSelectedService] = useState(null);
   const [data, setData] = useState([]);
@@ -465,6 +467,16 @@ const Services = () => {
 
   const restaurantOwners = useMemo(() => owners.filter((o) => o.role === "restaurateurs"), [owners]);
 
+  const filteredOwners = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return restaurantOwners;
+    return restaurantOwners.filter((o) => {
+      const ownerName = `${o.first_name || ""} ${o.last_name || ""}`.toLowerCase();
+      const locName = (o.location_name || "").toLowerCase();
+      return ownerName.includes(q) || locName.includes(q);
+    });
+  }, [restaurantOwners, searchTerm]);
+
   const groupedServices = useMemo(() => {
     const groups = data.reduce((accumulator, service) => {
       const ownerKey = service.restaurateurId ?? "unassigned";
@@ -507,6 +519,21 @@ const Services = () => {
         <Button variant="none" className="slick-btn-primary" onClick={() => { setFormData({ name: "", price: "", duration: "" }); setShowAddModal(true); }}>
           <Plus size={16} /> Add New Service
         </Button>
+      </div>
+
+      {/* Slick Control Toolbar */}
+      <div className="slick-toolbar d-flex gap-3 mb-4">
+        <InputGroup className="slick-search-group flex-grow-1">
+          <InputGroup.Text className="slick-search-icon">
+            <Search size={16} />
+          </InputGroup.Text>
+          <Form.Control
+            className="slick-search-input"
+            placeholder="Search restaurants by name..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </InputGroup>
       </div>
 
       {/* KPI Cards Strip */}
@@ -557,8 +584,8 @@ const Services = () => {
         </Col>
       </Row>
 
-      {restaurantOwners.length > 0 ? (
-        restaurantOwners.map((owner) => {
+      {filteredOwners.length > 0 ? (
+        filteredOwners.map((owner) => {
           const services = groupedServices.find((g) => String(g.ownerKey) === String(owner.id))?.services || [];
           const stats = tableStats[owner.id] || { totalTables: 0, totalCapacity: 0, tables: [] };
 
@@ -567,8 +594,9 @@ const Services = () => {
               <Card.Header className="bg-transparent border-0 px-4 pt-4 pb-3">
                 <div className="d-flex align-items-center justify-content-between">
                   <div>
-                    <h3 className="h5 mb-1">{owner.first_name} {owner.last_name}</h3>
+                    <h3 className="h5 mb-1">{owner.location_name || `${owner.first_name} ${owner.last_name}`}</h3>
                     <p className="text-muted mb-0">
+                      {owner.location_name ? `${owner.first_name} ${owner.last_name} · ` : ""}
                       {services.length} service{services.length === 1 ? "" : "s"} · {stats.totalTables} table{stats.totalTables === 1 ? "" : "s"} · {stats.totalCapacity} seats
                     </p>
                   </div>
@@ -678,7 +706,7 @@ const Services = () => {
         })
       ) : (
         <div className="slick-table-card text-center py-5 slick-empty-state">
-          No restaurants found.
+          {searchTerm.trim() ? `No restaurants match "${searchTerm.trim()}".` : "No restaurants found."}
         </div>
       )}
 

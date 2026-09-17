@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Spinner, Alert, Carousel, Modal } from "react-bootstrap";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../apis/api";
 import {
   FaChair,
@@ -18,6 +18,7 @@ import {
   FaTimes,
   FaUser,
   FaExclamationTriangle,
+  FaRandom,
 } from "react-icons/fa";
 import "../components/client/dashboard.css";
 
@@ -87,22 +88,12 @@ function getDateRange(count) {
   });
 }
 
-function useIsMobile(breakpoint = 768) {
-  const [isMobile, setIsMobile] = useState(
-    () => window.innerWidth <= breakpoint
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
-    const handler = (e) => setIsMobile(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, [breakpoint]);
-  return isMobile;
-}
-
 export default function BookTablePage() {
   const { restaurantId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const serviceParam = searchParams.get("service");
+  const preloadedRef = useRef(false);
   const [restaurant, setRestaurant] = useState(null);
   const [tables, setTables] = useState([]);
   const [services, setServices] = useState([]);
@@ -119,8 +110,10 @@ export default function BookTablePage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [timeOptions, setTimeOptions] = useState([]);
   const [slotAvailable, setSlotAvailable] = useState(null);
+  const [slotInfo, setSlotInfo] = useState(null);
   const [checkingSlot, setCheckingSlot] = useState(false);
   const [showSlotModal, setShowSlotModal] = useState(false);
+  const [lotteryEntry, setLotteryEntry] = useState(null);
   const [selectedHour, setSelectedHour] = useState(null);
   const [minuteOptions, setMinuteOptions] = useState([]);
 
@@ -186,6 +179,21 @@ export default function BookTablePage() {
     else setLoading(false);
   }, [restaurantId]);
 
+  // Pre-fill the cart with the service chosen on the restaurant profile (?service=<id>)
+  useEffect(() => {
+    if (preloadedRef.current || !serviceParam || services.length === 0) return;
+    const target = services.find((s) => String(s.id) === String(serviceParam));
+    if (!target) return;
+    preloadedRef.current = true;
+    setCart((prev) => ({
+      ...prev,
+      [target.id]: {
+        service: target,
+        quantity: (prev[target.id]?.quantity || 0) + 1,
+      },
+    }));
+  }, [services, serviceParam]);
+
   useEffect(() => {
     if (!selectedHour || !restaurant) {
       setMinuteOptions([]);
@@ -205,8 +213,10 @@ export default function BookTablePage() {
   }, [selectedHour, restaurant, cart]);
 
   useEffect(() => {
+    setLotteryEntry(null);
     if (!selectedTable || Object.keys(cart).length === 0 || !bookingTime) {
       setSlotAvailable(null);
+      setSlotInfo(null);
       return;
     }
 
@@ -233,13 +243,19 @@ export default function BookTablePage() {
         const res = await api.get(`/appointments/check-availability?${params}`);
         if (cancelled) return;
 
-        const available = res.data?.available ?? true;
+        const data = res.data || {};
+        const available = data.available ?? true;
         setSlotAvailable(available);
-        if (!available) {
+        setSlotInfo(data);
+        // Only hard-block when the conflict cannot be resolved by a lottery draw.
+        if (!available && !data.lotteryOpen) {
           setShowSlotModal(true);
         }
       } catch {
-        if (!cancelled) setSlotAvailable(null);
+        if (!cancelled) {
+          setSlotAvailable(null);
+          setSlotInfo(null);
+        }
       } finally {
         if (!cancelled) setCheckingSlot(false);
       }
@@ -285,6 +301,15 @@ export default function BookTablePage() {
       );
 
       if (response.status === 201) {
+        const first = response.data?.appointments?.[0];
+        setLotteryEntry(
+          first?.lotteryEntryId
+            ? {
+                entryId: first.lotteryEntryId,
+                competitors: first.totalCompetitors || 0,
+              }
+            : null,
+        );
         setShowSuccessModal(true);
       }
     } catch (err) {
@@ -342,6 +367,9 @@ export default function BookTablePage() {
     partySize > 0 &&
     partySize <= (selectedTable?.capacity || 0) &&
     selectedTable?.is_active;
+
+  const lotteryOpen = slotInfo?.lotteryOpen === true;
+  const slotBlocked = slotAvailable === false && !lotteryOpen;
 
   const activeTables = tables.filter((t) => t.is_active);
   const inactiveTables = tables.filter((t) => !t.is_active);
@@ -511,10 +539,23 @@ export default function BookTablePage() {
                 </div>
               )}
 
-              {slotAvailable === false && !checkingSlot && (
+              {slotBlocked && !checkingSlot && (
                 <div className="bk-alert bk-alert-error" style={{ marginTop: "0.75rem" }}>
                   <FaExclamationTriangle style={{ fontSize: "0.8rem" }} />
                   <span>This table is already booked at <strong>{bookingTime}</strong>. Pick another time.</span>
+                </div>
+              )}
+
+              {lotteryOpen && !checkingSlot && (
+                <div className="bk-alert bk-alert-info" style={{ marginTop: "0.75rem" }}>
+                  <FaRandom style={{ fontSize: "0.8rem", flexShrink: 0 }} />
+                  <span>
+                    This table is in demand at <strong>{bookingTime}</strong>. Confirm to enter the
+                    weighted lottery — the system notifies you if you win.
+                    {slotInfo?.resolutionTime
+                      ? ` Draw at ${new Date(slotInfo.resolutionTime).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}.`
+                      : ""}
+                  </span>
                 </div>
               )}
             </div>
@@ -794,7 +835,7 @@ export default function BookTablePage() {
               <button
                 className={`bk-btn bk-btn-primary bk-btn-full ${bookingInProgress ? "bk-btn-loading" : ""}`}
                 onClick={handleBookTable}
-                disabled={!canSubmit || bookingInProgress || slotAvailable === false || checkingSlot}
+                disabled={!canSubmit || bookingInProgress || slotBlocked || checkingSlot}
               >
                 {bookingInProgress ? (
                   <>
@@ -804,6 +845,10 @@ export default function BookTablePage() {
                   <>
                     <Spinner animation="border" size="sm" /> Checking...
                   </>
+                ) : lotteryOpen ? (
+                  <>
+                    <FaRandom /> Enter Weighted Lottery
+                  </>
                 ) : (
                   <>
                     <FaCheckCircle /> Confirm Booking
@@ -811,13 +856,13 @@ export default function BookTablePage() {
                 )}
               </button>
 
-              {slotAvailable === false && !checkingSlot && (
+              {slotBlocked && !checkingSlot && (
                 <p className="bk-hint-text" style={{ color: "#dc2626" }}>
                   Selected time slot is unavailable
                 </p>
               )}
 
-              {!canSubmit && !bookingInProgress && slotAvailable !== false && (
+              {!canSubmit && !bookingInProgress && !slotBlocked && (
                 <p className="bk-hint-text">
                   {!hasLocation
                     ? "Restaurant location not set"
@@ -843,14 +888,36 @@ export default function BookTablePage() {
         className="bk-success-modal"
       >
         <div className="bk-success-content">
-          <div className="bk-success-icon-wrap">
-            <FaCheckCircle />
+          <div
+            className="bk-success-icon-wrap"
+            style={
+              lotteryEntry
+                ? { background: "linear-gradient(135deg, #d97706, #f59e0b)", boxShadow: "0 8px 24px rgba(217,119,6,0.3)" }
+                : undefined
+            }
+          >
+            {lotteryEntry ? <FaRandom /> : <FaCheckCircle />}
           </div>
-          <h2 className="bk-success-title">Booking Confirmed!</h2>
+          <h2 className="bk-success-title">
+            {lotteryEntry ? "You're in the Lottery!" : "Booking Confirmed!"}
+          </h2>
           <p className="bk-success-text">
-            Your table has been successfully booked for{" "}
-            <strong>{formatDateShort(bookingDate)}</strong> at{" "}
-            <strong>{bookingTime}</strong>.
+            {lotteryEntry ? (
+              <>
+                Your request for <strong>{formatDateShort(bookingDate)}</strong> at{" "}
+                <strong>{bookingTime}</strong> has entered the weighted lottery
+                {lotteryEntry.competitors > 0
+                  ? ` against ${lotteryEntry.competitors} other guest${lotteryEntry.competitors > 1 ? "s" : ""}`
+                  : ""}
+                . We'll notify you when the slot is drawn.
+              </>
+            ) : (
+              <>
+                Your table has been successfully booked for{" "}
+                <strong>{formatDateShort(bookingDate)}</strong> at{" "}
+                <strong>{bookingTime}</strong>.
+              </>
+            )}
           </p>
           <div className="bk-success-details">
             <div className="bk-success-detail">

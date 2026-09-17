@@ -16,6 +16,8 @@ const RELIABILITY_CONFIG = {
   flagged: { color: "#ef4444", label: "Flagged — frequent no-shows or late arrivals" },
 };
 
+const CHECKIN_EARLY_GRACE_MS = 15 * 60 * 1000;
+
 const RiskDot = ({ reliabilityStatus }) => {
   const config = RELIABILITY_CONFIG[reliabilityStatus] || RELIABILITY_CONFIG.reliable;
   return (
@@ -39,6 +41,18 @@ export default function AppointmentsTab({ appointments, isLoading, onSync, sortF
   const [ratedIds, setRatedIds] = useState({});
   const [ratingTarget, setRatingTarget] = useState(null);
   const [ratingValue, setRatingValue] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30 * 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const appointmentTime = (app) => {
+    const start = new Date(app.date).getTime();
+    const end = start + (Number(app.duration) || 45) * 60 * 1000;
+    return { start, end, inWindow: now >= start - CHECKIN_EARLY_GRACE_MS && now <= end };
+  };
 
   useEffect(() => {
     const completed = (appointments || []).filter((a) => a.status === "completed");
@@ -182,16 +196,35 @@ export default function AppointmentsTab({ appointments, isLoading, onSync, sortF
                         </Button>
                       </>
                     )}
-                    {app.status === "accepted" && (
-                      <>
-                        <Button variant="none" className="control-btn btn-confirm me-1" onClick={() => onUpdateStatus(app.id, "arrived", "Client marked as arrived", "success")}>
-                          ✓ Arrived
-                        </Button>
-                        <Button variant="none" className="control-btn btn-cancel" onClick={() => { if (window.confirm("Mark this client as NO SHOW? This will affect their booking score.")) onUpdateStatus(app.id, "no-show", "Client marked as no-show", "danger") }}>
-                          ✕ No Show
-                        </Button>
-                      </>
-                    )}
+                    {app.status === "accepted" &&
+                      (() => {
+                        const { start, end, inWindow } = appointmentTime(app);
+                        if (now < start - CHECKIN_EARLY_GRACE_MS) {
+                          return (
+                            <span className="text-muted" style={{ fontSize: "0.75rem" }}>
+                              Arrived / No Show unlocks at{" "}
+                              <strong>{new Date(app.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</strong>
+                            </span>
+                          );
+                        }
+                        if (!inWindow && now > end) {
+                          return (
+                            <span className="text-muted" style={{ fontSize: "0.75rem" }}>
+                              Service period over — auto-marking as no-show
+                            </span>
+                          );
+                        }
+                        return (
+                          <>
+                            <Button variant="none" className="control-btn btn-confirm me-1" onClick={() => onUpdateStatus(app.id, "arrived", "Client marked as arrived", "success")}>
+                              ✓ Arrived
+                            </Button>
+                            <Button variant="none" className="control-btn btn-cancel" onClick={() => { if (window.confirm("Mark this client as NO SHOW? This will affect their booking score.")) onUpdateStatus(app.id, "no-show", "Client marked as no-show", "danger") }}>
+                              ✕ No Show
+                            </Button>
+                          </>
+                        );
+                      })()}
                     {app.status === "in_progress" && (
                       <Button variant="none" className="control-btn btn-confirm" onClick={() => onUpdateStatus(app.id, "complete", "Appointment completed", "success")}>
                         ✓ Complete

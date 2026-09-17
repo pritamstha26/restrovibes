@@ -68,7 +68,7 @@ export default function DashboardTab({ appointments, isLoading, onSync, sortFiel
           { title: "Completed Runs", val: appointments.filter((a) => a.status === "completed").length, type: "completed" },
           { title: "Gross Income", val: `Rs. ${totalRev}`, type: "revenue" },
         ].map((card, idx) => (
-          <Col md={3} key={idx}>
+          <Col xs={6} md={3} key={idx}>
             <Card className={`matte-stat-card card-${card.type}`}>
               <Card.Body>
                 <h3 className="stat-value">{card.val}</h3>

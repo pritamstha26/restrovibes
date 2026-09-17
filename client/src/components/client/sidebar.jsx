@@ -127,7 +127,7 @@ import { jwtDecode } from "jwt-decode";
 import api from "../../apis/api";
 import "./dashboard.css"; // Uses shared Vercel theme variables
 
-export const Sidebar = ({ activeTab }) => {
+export const Sidebar = ({ activeTab, open }) => {
   const navigate = useNavigate();
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: FaHome },
@@ -169,7 +169,7 @@ export const Sidebar = ({ activeTab }) => {
   }
 
   return (
-    <div className="v-sidebar-container">
+    <div className={`v-sidebar-container ${open ? "v-sidebar-open" : ""}`}>
       {/* Identity Node Frame */}
       <div className="v-sidebar-header">
         <div className="d-flex align-items-center">

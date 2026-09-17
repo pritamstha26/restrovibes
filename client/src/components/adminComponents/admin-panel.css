@@ -356,15 +356,15 @@
 .slick-badge-secondary { background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; }
 
 /* Distinct status colors for at-a-glance separation */
-.slick-badge-pending { background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; }
-.slick-badge-accepted { background: #eff6ff; color: #1e40af; border: 1px solid #93c5fd; }
-.slick-badge-confirmed { background: #f0fdfa; color: #115e59; border: 1px solid #5eead4; }
-.slick-badge-in_progress { background: #faf5ff; color: #6b21a8; border: 1px solid #d8b4fe; }
-.slick-badge-completed { background: #ecfdf5; color: #065f46; border: 1px solid #6ee7b7; }
-.slick-badge-cancelled { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
-.slick-badge-rejected { background: #fdf2f8; color: #9d174d; border: 1px solid #f9a8d4; }
-.slick-badge-no_show { background: #fef2f2; color: #7f1d1d; border: 1px solid #fca5a5; }
-.slick-badge-late_arrival { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
+.slick-badge-pending { background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; }
+.slick-badge-accepted { background: #e0f2fe; color: #075985; border: 1px solid #38bdf8; }
+.slick-badge-confirmed { background: #dcfce7; color: #166534; border: 1px solid #4ade80; }
+.slick-badge-in_progress { background: #e0f2fe; color: #075985; border: 1px solid #38bdf8; }
+.slick-badge-completed { background: #dcfce7; color: #166534; border: 1px solid #4ade80; }
+.slick-badge-cancelled { background: #fee2e2; color: #991b1b; border: 1px solid #f87171; }
+.slick-badge-rejected { background: #fee2e2; color: #991b1b; border: 1px solid #f87171; }
+.slick-badge-no_show { background: #fee2e2; color: #991b1b; border: 1px solid #f87171; }
+.slick-badge-late_arrival { background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; }
 
 .slick-empty-state {
   font-size: 0.82rem;
@@ -499,4 +499,203 @@
 .slick-content-viewport {
   background-color: #f8fafc !important;
   height: 100vh;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Responsive Adaptations — Admin Panel
+   Breakpoints: 1024px → 768px → 576px
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Tablet: keep essential columns */
+@media (max-width: 1024px) {
+  .resp-hide-tablet {
+    display: none;
+  }
+}
+
+/* Mobile landscape / small tablet: tight table + narrower sidebar */
+@media (max-width: 768px) {
+  .slick-sidebar {
+    width: 220px;
+    min-width: 220px;
+    padding: 1.25rem 0.9rem;
+  }
+  .slick-workspace {
+    padding: 1rem !important;
+  }
+  .slick-search-input {
+    min-width: 0;
+  }
+  .slick-title {
+    font-size: 1.3rem;
+  }
+  .resp-hide-mobile {
+    display: none;
+  }
+  .slick-table thead th {
+    padding: 0.8rem 0.9rem !important;
+  }
+  .slick-table tbody td {
+    padding: 0.8rem 0.9rem !important;
+  }
+}
+
+/* Phone portrait: compact paddings, full-width toolbar stack */
+@media (max-width: 576px) {
+  .slick-sidebar {
+    width: 200px;
+    min-width: 200px;
+    padding: 1rem 0.6rem;
+  }
+  .slick-header {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 0.75rem;
+  }
+  .slick-toolbar {
+    flex-direction: column;
+    gap: 0.65rem !important;
+  }
+  .slick-btn-primary,
+  .slick-btn-secondary {
+    width: 100%;
+    justify-content: center;
+  }
+  .slick-table thead th {
+    font-size: 0.65rem !important;
+    padding: 0.7rem 0.75rem !important;
+  }
+  .slick-table tbody td {
+    padding: 0.7rem 0.75rem !important;
+    font-size: 0.82rem;
+  }
+  .slick-profile-name {
+    font-size: 0.82rem;
+  }
+}
+@media (max-width: 400px) {
+  .slick-sidebar {
+    width: 180px;
+    min-width: 180px;
+  }
+  .slick-nav-item {
+    font-size: 0.8rem;
+    padding: 0.6rem 0.75rem;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Hamburger & Slide-over Sidebar
+   Desktop: sidebar always visible (static, no hamburger)
+   Mobile (≤768px): hamburger + slide-over drawer + backdrop
+   Content gets a reserved top strip so nothing overlaps
+   ═══════════════════════════════════════════════════════════════ */
+
+.admin-shell {
+  position: relative;
+}
+
+/* Hamburger toggle button — hidden on desktop, fixed top-left on mobile */
+.admin-hamburger {
+  position: fixed;
+  top: 0.9rem;
+  left: 0.9rem;
+  z-index: 1300;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #0f172a;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  transition: all 0.15s ease;
+}
+.admin-hamburger:hover {
+  border-color: #38bdf8;
+}
+.admin-hamburger svg {
+  transition: transform 0.2s ease;
+}
+.admin-hamburger.is-open svg {
+  transform: rotate(90deg);
+}
+
+/* Static desktop sidebar wrapper */
+.admin-sidebar-static {
+  height: 100vh;
+  background-color: #0f172a;
+  color: #f8fafc;
+  overflow-y: auto;
+}
+
+/* Mobile slide-over wrapper */
+.admin-sidebar-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 280px;
+  z-index: 1100;
+  transform: translateX(-100%);
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.admin-sidebar-overlay.is-open {
+  transform: translateX(0);
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.35);
+}
+
+/* Backdrop behind mobile sidebar */
+.admin-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  z-index: 1050;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.admin-backdrop.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Close button beside admin identity card (mobile drawer only) */
+.admin-close-button {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: transparent;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.admin-close-button:hover {
+  border-color: #f87171;
+  background-color: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+}
+
+/* Mobile: hamburger visible, content reserves a top strip so no overlap */
+@media (max-width: 768px) {
+  .admin-hamburger {
+    display: flex;
+  }
+  .admin-content {
+    padding-top: 3rem;
+  }
+}
+@media (min-width: 769px) {
+  .admin-sidebar-overlay,
+  .admin-backdrop {
+    display: none;
+  }
 }

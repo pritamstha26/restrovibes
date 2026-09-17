@@ -8,12 +8,60 @@ import { Op } from "sequelize";
 import { calculateAppointmentPriority } from "../utils/appointmentPriority.js";
 import RestaurateurService from "../models/RestaurateurServices.js";
 import { ScoringEngine } from "../utils/scoring.js";
+import { isLotteryClosed, getLotteryResolutionTime } from "../utils/lotteryTime.js";
+
+const getBufferMinutes = () => Number(process.env.BOOKING_BUFFER_MINUTES) || 15;
 
 const getSlotWindow = (slotStart, durationMinutes = 45) => {
   const start = new Date(slotStart);
   const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
   return { start, end };
 };
+
+// A booking reserves [start, start + duration + buffer). Two bookings conflict when
+// these effective windows overlap — this is what makes adjacent slots (e.g. 09:45 vs
+// 10:00 with a ~1h service) compete for the same resource instead of silently stacking.
+const getEffectiveEnd = (start, durationMinutes = 45) =>
+  new Date(
+    new Date(start).getTime() +
+      ((Number(durationMinutes) || 45) + getBufferMinutes()) * 60 * 1000,
+  );
+
+const buildOverlapFilter = (start, durationMinutes = 45) => {
+  const newStart = new Date(start);
+  const newEnd = getEffectiveEnd(start, durationMinutes);
+  return {
+    date: { [Op.lt]: newEnd },
+    [Op.or]: [
+      { end_time: { [Op.gt]: newStart } },
+      { end_time: null, date: { [Op.gt]: newStart } },
+    ],
+  };
+};
+
+async function countOverlappingActive(restaurateurId, start, durationMinutes, opts = {}) {
+  const where = {
+    restaurateurId,
+    status: { [Op.in]: ["pending", "accepted", "in_progress"] },
+    ...buildOverlapFilter(start, durationMinutes),
+  };
+  if (opts.excludeId) where.id = { [Op.ne]: opts.excludeId };
+  return AppointmentModel.count({ where, transaction: opts.transaction });
+}
+
+async function sumOverlappingPartySize(restaurateurId, start, durationMinutes, opts = {}) {
+  const where = {
+    restaurateurId,
+    status: { [Op.in]: ["pending", "accepted", "in_progress"] },
+    ...buildOverlapFilter(start, durationMinutes),
+  };
+  if (opts.excludeId) where.id = { [Op.ne]: opts.excludeId };
+  const sum = await AppointmentModel.sum("party_size", {
+    where,
+    transaction: opts.transaction,
+  });
+  return Number(sum || 0);
+}
 
 function getTimeSlotFromDate(date) {
   const d = new Date(date);
@@ -158,7 +206,7 @@ async function countSlotAppointments(restaurateurId, slotStart, durationMinutes 
 
 async function checkTableAvailability(tableId, bookingDate, durationMinutes = 45) {
   const newStart = new Date(bookingDate);
-  const newEnd = new Date(newStart.getTime() + durationMinutes * 60 * 1000);
+  const newEnd = getEffectiveEnd(newStart, durationMinutes);
 
   const existingAppointment = await AppointmentModel.findOne({
     where: {
@@ -432,19 +480,16 @@ export const createAppointment = async (req, res) => {
             transaction: t,
           });
 
-          const existingAcceptedCount = await AppointmentModel.count({
+          const existingActiveCount = await AppointmentModel.count({
             where: {
               restaurateurId: Number(restaurateurId),
-              date: {
-                [Op.gte]: appointmentDate,
-                [Op.lt]: new Date(appointmentDate.getTime() + (slotsDuration || 45) * 60 * 1000),
-              },
               status: { [Op.in]: ["accepted", "in_progress", "pending"] },
+              ...buildOverlapFilter(appointmentDate, slotsDuration || 45),
             },
             transaction: t,
           });
 
-          isSlotContested = pendingLotteryCount > 0 || existingAcceptedCount > 0;
+          isSlotContested = pendingLotteryCount > 0 || existingActiveCount > 0;
 
           if (tableId) {
             const table = await getTableById(tableId);
@@ -463,12 +508,17 @@ export const createAppointment = async (req, res) => {
               }
             }
           } else if (!isSlotContested) {
-            const activeAppointments = await countActiveAppointments(restaurateurId);
+            const overlappingPartySize = await sumOverlappingPartySize(
+              restaurateurId,
+              appointmentDate,
+              slotsDuration || 45,
+              { transaction: t },
+            );
             const seatCapacity = restaurateur.seat_capacity ?? 10;
-            console.log(`   📊 Capacity check (seats): ${activeAppointments}/${seatCapacity}`);
-            if (activeAppointments + partySize > seatCapacity) {
-              console.log("   ❌ Restaurant at full capacity");
-              return { error: 409, message: "Restaurant is fully booked. Please choose another time or restaurant." };
+            console.log(`   📊 Capacity check (overlapping seats): ${overlappingPartySize}/${seatCapacity}`);
+            if (overlappingPartySize + partySize > seatCapacity) {
+              console.log("   ❌ Restaurant at full capacity for this time");
+              return { error: 409, message: "Restaurant is fully booked for this time. Please choose another time or restaurant." };
             }
           }
 
@@ -526,6 +576,13 @@ export const createAppointment = async (req, res) => {
     let lotteryEntry = null;
 
     if (!autoAccept) {
+      if (isLotteryClosed(bookDateStr, preferredTimeSlot)) {
+        return res.status(409).json({
+          success: false,
+          message: "This slot's lottery has closed. Please choose another time or restaurant.",
+        });
+      }
+
       const weight = await ScoringEngine.calculateTotalWeight(
         clientId,
         Number(restaurateurId),
@@ -1070,7 +1127,15 @@ export const getAllAppointment = async (req, res) => {
         {
           model: UsersModel,
           as: "client", // ✅ must match association
-          attributes: ["id", "first_name", "last_name", "email"],
+          attributes: [
+            "id",
+            "first_name",
+            "last_name",
+            "email",
+            "penalty_score",
+            "reliability_status",
+            "is_flagged",
+          ],
         },
         {
           model: UsersModel,
@@ -1475,14 +1540,34 @@ export const cancelAppointment = async (req, res) => {
           ? Math.floor(new Date(updatedAppointment.date).getHours() * 4 + new Date(updatedAppointment.date).getMinutes() / 15)
           : 0;
 
-        await BookingHistoryModel.create({
-          user_id: updatedAppointment.clientId,
-          restaurant_id: updatedAppointment.restaurateurId,
-          booking_date: dateOnly,
-          booking_time_slot: timeSlot,
-          party_size: updatedAppointment.party_size || 1,
-          status: "late_cancelled",
+        // If the user is still inside an active lottery for this slot, exiting
+        // is a fair contest withdrawal: mark the pool entry lost and keep them
+        // penalty-free (no late_cancelled history). Otherwise it is an ordinary
+        // cancellation and the usual late_cancelled penalty applies.
+        const pendingEntry = await LotteryPoolModel.findOne({
+          where: {
+            restaurant_id: updatedAppointment.restaurateurId,
+            user_id: updatedAppointment.clientId,
+            booking_date: dateOnly,
+            preferred_time_slot: timeSlot,
+            status: "pending",
+          },
         });
+        if (pendingEntry) {
+          await LotteryPoolModel.update(
+            { status: "lost" },
+            { where: { id: pendingEntry.id, status: "pending" } },
+          );
+        } else {
+          await BookingHistoryModel.create({
+            user_id: updatedAppointment.clientId,
+            restaurant_id: updatedAppointment.restaurateurId,
+            booking_date: dateOnly,
+            booking_time_slot: timeSlot,
+            party_size: updatedAppointment.party_size || 1,
+            status: "late_cancelled",
+          });
+        }
       } catch (historyErr) {
         console.error("Failed to create booking history on cancel:", historyErr);
       }
@@ -1744,16 +1829,49 @@ export const checkSlotAvailability = async (req, res) => {
 
     const durationMinutes = Number(duration) || 45;
 
+    const bookDateStr = appointmentDate.toISOString().slice(0, 10);
+    const preferredTimeSlot = getTimeSlotFromDate(appointmentDate);
+    const pendingLotteryCount = await LotteryPoolModel.count({
+      where: {
+        restaurant_id: Number(restaurateur_id),
+        booking_date: bookDateStr,
+        preferred_time_slot: preferredTimeSlot,
+        status: "pending",
+      },
+    });
+    const lotteryClosed = isLotteryClosed(bookDateStr, preferredTimeSlot);
+    const resolutionTime = getLotteryResolutionTime(bookDateStr, preferredTimeSlot);
+
+    // Mirror createAppointment's contention rule: any active/pending appointment
+    // whose effective window (duration + buffer) overlaps this one, or an existing
+    // lottery entry, makes the slot contested.
+    const existingActiveCount = await countOverlappingActive(
+      Number(restaurateur_id),
+      appointmentDate,
+      durationMinutes,
+    );
+    const contested = pendingLotteryCount > 0 || existingActiveCount > 0;
+
     if (table_id) {
       const available = await checkTableAvailability(
         table_id,
         appointmentDate,
         durationMinutes,
       );
-      return res.status(200).json({ success: true, available });
+
+      return res.status(200).json({
+        success: true,
+        available,
+        contested,
+        pendingLotteryCount,
+        existingActiveCount,
+        lotteryOpen: contested && !lotteryClosed,
+        lotteryClosed,
+        resolutionTime: contested ? resolutionTime : null,
+      });
     }
 
-    const seatsTaken = await countSlotAppointments(
+    const seatsTaken = await sumOverlappingPartySize(
       restaurateur_id,
       appointmentDate,
       durationMinutes,
@@ -1768,6 +1886,12 @@ export const checkSlotAvailability = async (req, res) => {
     return res.status(200).json({
       success: true,
       available: remaining > 0,
+      contested,
+      pendingLotteryCount,
+      existingActiveCount,
+      lotteryOpen: contested && !lotteryClosed,
+      lotteryClosed,
+      resolutionTime: contested ? resolutionTime : null,
       seatsTaken,
       capacity,
       remaining,

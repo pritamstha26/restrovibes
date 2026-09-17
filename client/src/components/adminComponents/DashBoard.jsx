@@ -241,7 +241,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { Row, Col, Spinner } from "react-bootstrap";
-import { CalendarCheck, Clock, User, Scissors, Landmark,TrendingUp } from "lucide-react";
+import { CalendarCheck, Clock, User, UtensilsCrossed, Landmark,TrendingUp } from "lucide-react";
 
 import "./admin-panel.css";
 import api from "../../apis/api";
@@ -495,7 +495,7 @@ const Dashboard = () => {
                     </td>
                     <td>
                       <div className="d-flex align-items-center gap-2">
-                        <Scissors size={13} className="text-slate-muted" />
+                        <UtensilsCrossed size={13} className="text-slate-muted" />
                         <span className="text-dark fw-medium">{data.service_name || "Service Item Deleted"}</span>
                       </div>
                     </td>

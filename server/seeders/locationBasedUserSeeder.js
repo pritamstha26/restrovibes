@@ -188,6 +188,19 @@ function getRandomLocationName() {
   return neighborhoods[randomIndex].name;
 }
 
+// Pick a random neighborhood and return its real coordinates with tiny jitter
+// so nearby venues do not stack on the exact same point.
+function getRandomNeighborhoodLocation() {
+  const { neighborhoods } = getKathmanduAreaCoordinates();
+  const neighborhood = neighborhoods[Math.floor(Math.random() * neighborhoods.length)];
+  const jitter = (Math.random() * 2 - 1) * 0.002;
+  return {
+    latitude: Number((neighborhood.lat + jitter).toFixed(6)),
+    longitude: Number((neighborhood.lng + jitter).toFixed(6)),
+    location_name: neighborhood.name,
+  };
+}
+
 // Helper function to check if email exists
 async function isEmailUnique(email) {
   const existingUser = await UsersModel.findOne({ where: { email } });
@@ -259,8 +272,8 @@ async function seedLocationBasedUsers() {
         } while (usedPhones.has(phoneNumber));
         usedPhones.add(phoneNumber);
 
-        const location = generateRandomLocation(kathmanduArea.center, kathmanduArea.radius);
-        const locationName = getRandomLocationName();
+        const location = getRandomNeighborhoodLocation();
+        const locationName = location.location_name;
 
         // Generate a unique email
         let email;
@@ -332,8 +345,8 @@ async function seedLocationBasedUsers() {
         } while (usedPhones.has(phoneNumber));
         usedPhones.add(phoneNumber);
 
-        const location = generateRandomLocation(kathmanduArea.center, kathmanduArea.radius);
-        const locationName = getRandomLocationName();
+        const location = getRandomNeighborhoodLocation();
+        const locationName = location.location_name;
 
         // Generate a unique email
         let email;

@@ -20,7 +20,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import api from "../../apis/api";
 import { reverseGeocode } from "../../utils/geocode";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import RestaurantProfile from "./restaurant-profile";
 import "../client/dashboard.css";
 
@@ -34,15 +34,27 @@ const RecenterMap = ({ center }) => {
 
 const NearbyRestaurants = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [restaurateurs, setRestaurateurs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
-  const [searchRadius, setSearchRadius] = useState(null);
+  const [searchRadius, setSearchRadius] = useState(() => {
+    const raw = searchParams.get("radius");
+    const n = raw != null && raw !== "" ? Number(raw) : NaN;
+    return Number.isFinite(n) ? n : null;
+  });
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [selectedRestaurateur, setSelectedRestaurateur] = useState(null);
   const [showRestaurateurProfile, setShowRestaurateurProfile] = useState(false);
   const [restaurantRatings, setRestaurantRatings] = useState({});
+
+  const urlRadius = (() => {
+    const raw = searchParams.get("radius");
+    const n = raw != null && raw !== "" ? Number(raw) : NaN;
+    return Number.isFinite(n) ? n : null;
+  })();
+  const urlRestaurantId = searchParams.get("restaurant") || null;
 
   const lerp = (a, b, t) => a + (b - a) * Math.min(Math.max(t, 0), 1);
 
@@ -103,6 +115,84 @@ const NearbyRestaurants = () => {
   useEffect(() => {
     fetchUserLocation();
   }, []);
+
+  // Lock background scroll and hide the mobile hamburger while the profile is open
+  useEffect(() => {
+    const isOpen = showRestaurateurProfile && selectedRestaurateur;
+    if (!isOpen) return undefined;
+    document.body.classList.add("nr-profile-open");
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.classList.remove("nr-profile-open");
+      document.body.style.overflow = "";
+    };
+  }, [showRestaurateurProfile, selectedRestaurateur]);
+
+  // Reflect search radius changes in the URL (?radius=)
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (searchRadius == null) {
+          next.delete("radius");
+        } else if (next.get("radius") !== String(searchRadius)) {
+          next.set("radius", String(searchRadius));
+        }
+        return next;
+      },
+      { replace: true }
+    );
+  }, [searchRadius, setSearchParams]);
+
+  // Apply URL radius changes (back/forward, manual edit, shareable link)
+  useEffect(() => {
+    if (urlRadius === searchRadius) return undefined;
+    setSearchRadius(urlRadius);
+    if (userLocation) {
+      fetchNearbyRestaurateurs(userLocation.latitude, userLocation.longitude, urlRadius);
+    }
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlRadius]);
+
+  // Open/close the profile whenever ?restaurant= changes
+  useEffect(() => {
+    if (urlRestaurantId != null && urlRestaurantId !== "") {
+      setSelectedRestaurateur(urlRestaurantId);
+      sessionStorage.setItem("selected_restaurateur_id", urlRestaurantId);
+      setShowRestaurateurProfile(true);
+    } else {
+      setSelectedRestaurateur(null);
+      setShowRestaurateurProfile(false);
+    }
+  }, [urlRestaurantId]);
+
+  const openProfile = (id) => {
+    setSelectedRestaurateur(id);
+    sessionStorage.setItem("selected_restaurateur_id", id);
+    setShowRestaurateurProfile(true);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("restaurant", String(id));
+        return next;
+      },
+      { replace: true }
+    );
+  };
+
+  const closeProfile = () => {
+    setSelectedRestaurateur(null);
+    setShowRestaurateurProfile(false);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("restaurant");
+        return next;
+      },
+      { replace: true }
+    );
+  };
 
   const fetchUserLocation = async () => {
     try {
@@ -411,11 +501,7 @@ const NearbyRestaurants = () => {
                       <div className="nr-popup-actions">
                         <button
                           className="nr-popup-btn nr-popup-btn-profile"
-                          onClick={() => {
-                            setSelectedRestaurateur(rid);
-                            sessionStorage.setItem("selected_restaurateur_id", rid);
-                            setShowRestaurateurProfile(true);
-                          }}
+                          onClick={() => openProfile(rid)}
                         >
                           Profile
                         </button>
@@ -533,11 +619,7 @@ const NearbyRestaurants = () => {
                     <div className="nr-card-actions">
                       <button
                         className="nr-btn nr-btn-ghost"
-                        onClick={() => {
-                          setSelectedRestaurateur(id);
-                          sessionStorage.setItem("selected_restaurateur_id", id);
-                          setShowRestaurateurProfile(true);
-                        }}
+                        onClick={() => openProfile(id)}
                       >
                         Profile
                       </button>
@@ -592,7 +674,7 @@ const NearbyRestaurants = () => {
             <h3>Restaurant Profile</h3>
             <button
               className="nr-btn nr-btn-ghost"
-              onClick={() => setShowRestaurateurProfile(false)}
+              onClick={closeProfile}
             >
               Back to Search
             </button>
