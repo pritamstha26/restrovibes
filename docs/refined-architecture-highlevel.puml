@@ -1,0 +1,107 @@
+@startuml RestroVibes — High-Level Architecture
+skinparam monochrome false
+skinparam shadowing false
+skinparam componentFontSize 12
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam nodesep 30
+skinparam ranksep 30
+skinparam packageFontSize 11
+skinparam packageStyle rectangle
+skinparam arrowFontSize 9
+
+title RestroVibes — High-Level Architecture
+left to right direction
+
+actor Client as CL
+actor Restaurateur as RE
+actor Admin as AD
+
+package "Client Tier\n(React SPA · Vite)" as CLIENT {
+  [Dashboard] as C_DASH
+  [Map Discovery\n(Leaflet)] as C_MAP
+  [Booking &\nLottery] as C_BOOK
+  [GPS Navigation] as C_GPS
+  [Settings] as C_SET
+}
+
+cloud "HTTPS / REST + JWT" as NET
+
+package "Server Tier\n(Express.js · Node :5000)" as SERVER {
+  package "Middleware\n(Auth · CORS · JSON)" as MW
+  package "Controllers" as CTRL {
+    [Auth] as CT_AUTH
+    [Appointment] as CT_APPT
+    [Lottery] as CT_LOT
+    [Location] as CT_LOC
+    [Rating] as CT_RAT
+  }
+  package "Business Engines" as ENG {
+    [ScoringEngine\nPenalty/Trust] as ENG_SCORE
+    [WeightedLottery\nSelection] as ENG_LOT
+    [Haversine\nDistance/ETA] as ENG_HAV
+  }
+  package "Background Workers" as WW {
+    [Overstay Worker\n60s] as WW_OVER
+    [Auto-Accept Worker\n2min] as WW_AUTO
+    [Lottery Scheduler\n60s] as WW_LOT
+  }
+}
+
+database "PostgreSQL 14" as DB {
+  [Users]
+  [Appointments]
+  [BookingHistory]
+  [LotteryPool]
+  [Tables]
+  [Ratings]
+}
+
+cloud "External" as EXT {
+  [OpenStreetMap] as OSM
+  [SMTP Email] as SMTP
+}
+
+' === CLIENT -> SERVER ===
+C_DASH --> NET
+C_MAP --> NET
+C_BOOK --> NET
+C_GPS --> NET
+
+NET --> MW : HTTP / REST
+
+' === SERVER INTERNALS ===
+MW --> CTRL
+CTRL --> ENG
+CTRL --> WW
+ENG --> WW
+WW --> DB
+CTRL --> DB
+
+' === EXTERNAL ===
+C_MAP --> OSM : Map tiles
+CT_LOC --> ENG_HAV : Haversine
+ENG_SCORE --> DB : Read/Write\npenalty data
+CT_AUTH --> SMTP : Email reset
+
+' === ACTOR NOTES ===
+note right of CLIENT
+  **Client Portal**
+  Book tables, discover
+  restaurants, enter lottery
+end note
+
+note right of SERVER
+  **Server Logic**
+  Routes → Controllers → Engines
+  3 background workers
+  run independently
+end note
+
+note right of DB
+  **7 core tables**
+  Serialized transactions
+  Auto-migration on startup
+end note
+
+@enduml

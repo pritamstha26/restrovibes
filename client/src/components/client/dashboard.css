@@ -421,7 +421,7 @@
 }
 
 .v-status-flag-pending { color: #9a3412; background: #fff7ed; border-color: #fdba74; border-left-color: #f97316; }
-.v-status-flag-accepted { color: #1e40af; background: #eff6ff; border-color: #93c5fd; border-left-color: #3b82f6; }
+.v-status-flag-accepted { color: #065f46; background: #ecfdf5; border-color: #6ee7b7; border-left-color: #10b981; }
 .v-status-flag-confirmed { color: #115e59; background: #f0fdfa; border-color: #5eead4; border-left-color: #14b8a6; }
 .v-status-flag-in_progress { color: #6b21a8; background: #faf5ff; border-color: #d8b4fe; border-left-color: #a855f7; }
 .v-status-flag-completed { color: #065f46; background: #ecfdf5; border-color: #6ee7b7; border-left-color: #10b981; }

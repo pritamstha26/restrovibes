@@ -11,7 +11,7 @@ function isExpired(token) {
   }
 }
 
-const ProtectedRoute = () => {
+const ProtectedRoute = ({ allowedRoles } = {}) => {
   const token = sessionStorage.getItem("access_token");
 
   if (!token || isExpired(token)) {
@@ -22,6 +22,22 @@ const ProtectedRoute = () => {
       } catch {}
     }
     return <Navigate to="/login" replace />;
+  }
+
+  // Role-based guard: decode role from JWT and enforce allowedRoles.
+  // Without this, any authenticated user (e.g. restaurateurs) could
+  // manually navigate to /admin and render the admin panel.
+  if (allowedRoles && allowedRoles.length > 0) {
+    let role = null;
+    try {
+      const decoded = jwtDecode(token);
+      role = decoded?.role || null;
+    } catch {
+      return <Navigate to="/login" replace />;
+    }
+    if (!role || !allowedRoles.includes(role)) {
+      return <Navigate to="/unauthorized" replace />;
+    }
   }
 
   return <Outlet />;

@@ -2,7 +2,7 @@ import { Op } from "sequelize";
 import sequelize from "../config/db.js";
 import { LotteryPoolModel } from "../models/model.js";
 import { resolveLottery } from "../controllers/lotteryController.js";
-import { getLotteryResolutionTime } from "../utils/lotteryTime.js";
+import { getLotteryEarliestResolutionTime } from "../utils/lotteryTime.js";
 
 const RESOLUTION_HORIZON_DAYS = Number(process.env.LOTTERY_RESOLUTION_HORIZON_DAYS) || 14;
 
@@ -55,12 +55,13 @@ class LotteryScheduler {
 
       for (const slot of pendingSlots) {
         try {
-          // Only draw slots whose deadline has passed; slots still open keep accepting entries.
-          const resolutionTime = getLotteryResolutionTime(
+          // Only draw slots whose deadline has passed AND minimum duration met; slots still open keep accepting entries.
+          const earliestResolution = getLotteryEarliestResolutionTime(
             slot.booking_date,
             slot.preferred_time_slot,
+            now,
           );
-          if (now.getTime() < resolutionTime.getTime()) continue;
+          if (now.getTime() < earliestResolution.getTime()) continue;
 
           const result = await resolveLottery(
             slot.restaurant_id,

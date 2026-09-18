@@ -343,6 +343,7 @@
 }
 
 .status-flag-pending { color: #9a3412; background: #fff7ed; border-color: #fdba74; }
+.status-flag-accepted { color: #065f46; background: #ecfdf5; border-color: #6ee7b7; }
 .status-flag-confirmed { color: #115e59; background: #f0fdfa; border-color: #5eead4; }
 .status-flag-in_progress { color: #6b21a8; background: #faf5ff; border-color: #d8b4fe; }
 .status-flag-completed { color: #065f46; background: #ecfdf5; border-color: #6ee7b7; }

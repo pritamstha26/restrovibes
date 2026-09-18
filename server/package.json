@@ -7,7 +7,8 @@
     "dev": "nodemon index.js",
     "seed:barbers": "node scripts/seedBarbers.js",
     "seed:location-users": "node seeders/locationBasedUserSeeder.js",
-    "demo:lottery": "node scripts/demoLottery.js"
+    "demo:lottery": "node scripts/demoLottery.js",
+    "sim:lottery": "node scripts/lotterySimulator.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

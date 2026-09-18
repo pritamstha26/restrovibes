@@ -1,0 +1,89 @@
+.lottery-demo { padding: 1.5rem; background: #f8fafc; min-height: 100vh; }
+.lottery-demo__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 2px solid #e2e8f0; }
+.lottery-demo__header h2 { font-size: 1.4rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 0.5rem; margin: 0; }
+.lottery-demo__controls { display: flex; gap: 0.75rem; }
+
+.lottery-demo__countdown { background: linear-gradient(135deg, #1e293b, #0f172a); border-radius: 12px; padding: 1rem 1.5rem; margin-bottom: 1.5rem; text-align: center; color: #f8fafc; border: 2px solid #38bdf8; box-shadow: 0 4px 20px rgba(56, 189, 248, 0.15); }
+.lottery-demo__countdown--closed { background: linear-gradient(135deg, #7f1d1d, #450a0a); border-color: #f87171; box-shadow: 0 4px 20px rgba(248, 113, 113, 0.15); animation: pulse-border 1s infinite; }
+@keyframes pulse-border { 0%, 100% { border-color: #f87171; } 50% { border-color: #fca5a5; } }
+.lottery-demo__countdown-label { font-size: 0.8rem; text-transform: uppercase; font-weight: 700; color: #94a3b8; letter-spacing: 0.05em; margin-bottom: 0.3rem; }
+.lottery-demo__countdown-timer { font-size: 3rem; font-weight: 900; font-family: monospace; color: #38bdf8; letter-spacing: 0.1em; }
+.lottery-demo__countdown--closed .lottery-demo__countdown-timer { color: #f87171; }
+.lottery-demo__countdown-info { font-size: 0.7rem; color: #64748b; margin-top: 0.3rem; }
+
+.lottery-demo__config { background: #ffffff; border-radius: 12px; border: 1px solid #edf2f7; padding: 1.25rem; margin-bottom: 1.5rem; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.015); }
+.lottery-demo__config h5 { font-size: 0.9rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.lottery-demo__params { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+.lottery-demo__params label { display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.8rem; font-weight: 600; color: #475569; }
+.lottery-demo__params input[type="range"] { width: 100%; accent-color: #38bdf8; cursor: pointer; }
+.lottery-demo__param-value { font-family: monospace; font-size: 0.85rem; color: #0f172a; font-weight: 700; background: #f1f5f9; padding: 0.2rem 0.5rem; border-radius: 4px; text-align: center; }
+
+.lottery-demo__chart { background: #ffffff; border-radius: 12px; border: 1px solid #edf2f7; padding: 1.25rem; margin-bottom: 1.5rem; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.015); }
+.lottery-demo__chart h5 { font-size: 0.9rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.lottery-demo__svg { width: 100%; max-height: 300px; background: #f8fafc; border-radius: 8px; }
+
+.lottery-demo__weights { background: #ffffff; border-radius: 12px; border: 1px solid #edf2f7; padding: 1.25rem; margin-bottom: 1.5rem; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.015); }
+.lottery-demo__weights h5 { font-size: 0.9rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.lottery-demo__bars { display: flex; flex-direction: column; gap: 0.75rem; }
+.lottery-demo__bar-row { display: flex; align-items: center; gap: 1rem; }
+.lottery-demo__bar-label { display: flex; align-items: center; gap: 0.5rem; min-width: 150px; font-size: 0.8rem; font-weight: 600; color: #334155; }
+.lottery-demo__dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.lottery-demo__bar-track { flex: 1; height: 24px; background: #f1f5f9; border-radius: 6px; overflow: hidden; }
+.lottery-demo__bar-fill { height: 100%; border-radius: 6px; min-width: 2px; transition: width 0.5s ease; }
+.lottery-demo__bar-value { min-width: 120px; text-align: right; font-size: 0.8rem; font-weight: 700; font-family: monospace; color: #0f172a; }
+
+.lottery-demo__timing { background: #ffffff; border-radius: 12px; border: 1px solid #edf2f7; padding: 1.25rem; margin-bottom: 1.5rem; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.015); }
+.lottery-demo__timing h5 { font-size: 0.9rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.lottery-demo__timeline { display: flex; align-items: center; justify-content: space-around; flex-wrap: wrap; gap: 1rem; }
+.lottery-demo__timeline-block { background: #f1f5f9; border-radius: 8px; padding: 1rem 1.5rem; text-align: center; min-width: 150px; border: 2px solid #e2e8f0; transition: all 0.3s; }
+.lottery-demo__timeline-block--cutoff { background: #fef3c7; border-color: #fbbf24; }
+.lottery-demo__block-label { display: block; font-size: 0.7rem; text-transform: uppercase; font-weight: 700; color: #64748b; letter-spacing: 0.05em; margin-bottom: 0.3rem; }
+.lottery-demo__block-time { display: block; font-size: 0.95rem; font-weight: 700; color: #0f172a; font-family: monospace; }
+.lottery-demo__timeline-arrow { font-size: 1.5rem; color: #94a3b8; font-weight: bold; }
+
+.lottery-demo__formula { background: #ffffff; border-radius: 12px; border: 1px solid #edf2f7; padding: 1.25rem; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.015); }
+.lottery-demo__formula h5 { font-size: 0.9rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; }
+.lottery-demo__formula-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
+.lottery-demo__formula-card { background: #f8fafc; border-radius: 8px; padding: 1rem; border-left: 3px solid #38bdf8; display: flex; flex-direction: column; gap: 0.3rem; }
+.lottery-demo__formula-card code { font-family: "SFMono-Regular", Menlo, Monaco, Consolas, monospace; font-size: 0.85rem; color: #0f172a; font-weight: 600; }
+.lottery-demo__formula-card span { font-size: 0.75rem; color: #64748b; }
+.lottery-demo__formula-card sup { font-size: 0.7rem; }
+.lottery-demo__formula-card sub { font-size: 0.7rem; }
+
+.lottery-demo__resolve { display: flex; justify-content: center; margin-bottom: 1.5rem; }
+.lottery-demo__resolve button { font-size: 1rem; padding: 0.75rem 2rem; }
+
+.lottery-demo__result { background: #ffffff; border-radius: 12px; border: 1px solid #edf2f7; padding: 1.25rem; margin-bottom: 1.5rem; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.015); }
+.lottery-demo__result h5 { font-size: 0.9rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.lottery-demo__result-winner { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; background: #f0fdf4; border: 2px solid #34d399; border-radius: 8px; margin-bottom: 0.75rem; font-weight: 700; color: #166534; }
+.lottery-demo__winner-name { font-size: 1.1rem; }
+.lottery-demo__winner-weight { font-size: 0.8rem; font-weight: 600; color: #4ade80; }
+.lottery-demo__result-entrants { display: flex; flex-direction: column; gap: 0.5rem; }
+.lottery-demo__result-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.85rem; }
+.lottery-demo__result-row--won { background: #f0fdf4; border: 1px solid #34d399; font-weight: 700; color: #166534; }
+.lottery-demo__result-weight { margin-left: auto; font-family: monospace; font-weight: 600; font-size: 0.8rem; color: #64748b; }
+
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.lottery-demo__status { margin-left: auto; font-family: monospace; font-weight: 700; font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 999px; border: 1px solid transparent; text-transform: uppercase; letter-spacing: 0.04em; }
+.lottery-demo__status--accepted { color: #166534; background: #f0fdf4; border-color: #34d399; }
+.lottery-demo__status--pending { color: #92400e; background: #fffbeb; border-color: #fbbf24; }
+.lottery-demo__status--cancelled, .lottery-demo__status--lost, .lottery-demo__status--expired { color: #64748b; background: #f1f5f9; border-color: #cbd5e1; }
+.lottery-demo__status--won { color: #166534; background: #f0fdf4; border-color: #34d399; }
+
+.slick-empty-state { color: #94a3b8; font-size: 0.9rem; display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
+.slick-empty-state code { background: #e2e8f0; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; }
+
+.lottery-demo__resolve { display: flex; justify-content: center; margin-bottom: 1.5rem; }
+.lottery-demo__resolve button { font-size: 1rem; padding: 0.75rem 2rem; }
+
+.lottery-demo__result { background: #ffffff; border-radius: 12px; border: 1px solid #edf2f7; padding: 1.25rem; margin-bottom: 1.5rem; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.015); }
+.lottery-demo__result h5 { font-size: 0.9rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.lottery-demo__result-winner { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; background: #f0fdf4; border: 2px solid #34d399; border-radius: 8px; margin-bottom: 0.75rem; font-weight: 700; color: #166534; }
+.lottery-demo__winner-name { font-size: 1.1rem; }
+.lottery-demo__winner-weight { font-size: 0.8rem; font-weight: 600; color: #4ade80; }
+.lottery-demo__result-entrants { display: flex; flex-direction: column; gap: 0.5rem; }
+.lottery-demo__result-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.85rem; }
+.lottery-demo__result-row--won { background: #f0fdf4; border: 1px solid #34d399; font-weight: 700; color: #166534; }
+.lottery-demo__result-weight { margin-left: auto; font-family: monospace; font-weight: 600; font-size: 0.8rem; color: #64748b; }

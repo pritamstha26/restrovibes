@@ -122,6 +122,7 @@ import {
   FaUser,
   FaMapMarkerAlt,
   FaRoute,
+  FaTrophy,
 } from "react-icons/fa";
 import { jwtDecode } from "jwt-decode";
 import api from "../../apis/api";
@@ -141,6 +142,7 @@ export const Sidebar = ({ activeTab, open }) => {
       label: "Navigate",
       icon: FaRoute,
     },
+    { id: "lottery", label: "Lottery", icon: FaTrophy },
     { id: "settings", label: "Settings", icon: FaCog },
   ];
 

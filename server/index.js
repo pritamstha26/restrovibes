@@ -115,6 +115,10 @@ app.use("/api/ratings", ratingRoutes);
 app.use("/api/lottery", lotteryRoutes);
 app.use("/api/tables", tableRoutes);
 app.use("/api/uploads", uploadRoutes);
+app.use(express.static(path.join(__dirname, "../client/dist")));
+app.use((req, res) => {
+  res.sendFile(path.join(__dirname, "../client/dist/index.html"));
+});
 // Error handling
 app.use((err, req, res, next) => {
   console.error(err.stack);

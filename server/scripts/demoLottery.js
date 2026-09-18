@@ -1,10 +1,12 @@
 // Seeds a ready-to-resolve weighted-lottery contest for demos.
 //
 // Usage:
-//   node scripts/demoLottery.js [--restaurant <id>] [--days <n>] [--hour <0-23>] [--resolve]
+//   node scripts/demoLottery.js [--restaurant <id>] [--days <n>] [--hour <0-23>] [--resolve] [--at <iso-datetime>]
 //
 // Creates two competing lottery entries for the same slot with different entry times,
 // so the time-decay aging boost is visible when the slot is resolved.
+// --at lets you resolve "as of" a dynamic time, e.g. --at "2026-09-20T12:00" to
+// simulate the draw hours in the future without waiting.
 import sequelize from "../config/db.js";
 import { Op } from "sequelize";
 import { UsersModel, LotteryPoolModel } from "../models/model.js";
@@ -12,7 +14,7 @@ import AppointmentModel from "../models/appointmentModel.js";
 import RestaurateurService from "../models/RestaurateurServices.js";
 import { ScoringEngine } from "../utils/scoring.js";
 import { getWeightedEntries } from "../utils/weightedLottery.js";
-import { getLotteryResolutionTime, isLotteryClosed } from "../utils/lotteryTime.js";
+import { getLotteryResolutionTime, isLotteryClosed, getLotteryCountdown, MIN_LOTTERY_DURATION_MS, LOTTERY_CUTOFF_MINUTES } from "../utils/lotteryTime.js";
 import { resolveLottery } from "../controllers/lotteryController.js";
 
 const args = process.argv.slice(2);
@@ -83,6 +85,36 @@ const main = async () => {
   const durationMinutes = service.duration || 60;
   const endTime = new Date(appointmentDate.getTime() + (durationMinutes + 15) * 60 * 1000);
 
+  // Refuse to seed into an occupied slot: any accepted/in_progress booking
+  // overlapping this window would block every entry at resolve time and the
+  // lottery would end with no winner ("slot_occupied").
+  const occupant = await AppointmentModel.findOne({
+    where: {
+      restaurateurId: restaurant.id,
+      status: { [Op.in]: ["accepted", "in_progress"] },
+      [Op.and]: [
+        { date: { [Op.lt]: endTime } },
+        {
+          [Op.or]: [
+            { end_time: { [Op.gt]: appointmentDate } },
+            { end_time: null, date: { [Op.gt]: appointmentDate } },
+          ],
+        },
+      ],
+    },
+    order: [["date", "ASC"]],
+  });
+  if (occupant) {
+    console.error(
+      `\nRefusing to seed: slot ${slotToTime(timeSlot)} on ${bookingDate} is blocked by ` +
+      `${occupant.status} booking #${occupant.id} at ${new Date(occupant.date).toLocaleString()}. ` +
+      `Resolving here would release entrants with NO winner.`,
+    );
+    console.error("Cancel that booking first, or pick another slot with --days / --hour.");
+    await sequelize.close();
+    process.exit(1);
+  }
+
   // Clean any previous demo state for this exact slot.
   await LotteryPoolModel.destroy({
     where: {
@@ -151,13 +183,18 @@ const main = async () => {
   );
   const totalWeight = weighted.reduce((sum, w) => sum + w.effectiveWeight, 0);
   const resolutionTime = getLotteryResolutionTime(bookingDate, timeSlot);
+  const countdown = getLotteryCountdown(bookingDate, timeSlot);
+  const minDurationMin = Math.round(MIN_LOTTERY_DURATION_MS / 60000);
 
   console.log("\n=== DEMO LOTTERY SEEDED ===");
   console.log(`Restaurant      : ${restaurant.id} (${restaurant.first_name} ${restaurant.last_name})`);
   console.log(`Service         : ${service.name} (${durationMinutes} min, Rs. ${service.price})`);
   console.log(`Booking date    : ${bookingDate}`);
   console.log(`Time slot       : ${timeSlot} (${slotToTime(timeSlot)})`);
+  console.log(`Cutoff          : ${LOTTERY_CUTOFF_MINUTES || 60} min before slot`);
+  console.log(`Min duration    : ${minDurationMin} min (lottery must stay open at least this long)`);
   console.log(`Resolution time : ${resolutionTime.toLocaleString()}  ${isLotteryClosed(bookingDate, timeSlot) ? "[CLOSED - can resolve now]" : "[open]"}`);
+  console.log(`Countdown       : ${countdown.remainingSeconds}s (${countdown.remainingMinutes} min)`);
   console.log("\nEntrants:");
   staged.forEach((s, i) => {
     const eff = weighted[i].effectiveWeight;
@@ -170,8 +207,15 @@ const main = async () => {
   });
 
   if (doResolve) {
+    const atArg = getArg("--at", null);
+    const now = atArg ? new Date(atArg) : new Date();
+    if (Number.isNaN(now.getTime())) {
+      throw new Error(`Invalid --at datetime: ${atArg}`);
+    }
+    if (atArg) console.log(`Resolving as of   : ${now.toISOString()} (dynamic --at)`);
     const result = await resolveLottery(restaurant.id, bookingDate, timeSlot, {
       force: true,
+      now,
     });
     console.log("\n=== RESOLVED ===");
     console.log(JSON.stringify(result, null, 2));

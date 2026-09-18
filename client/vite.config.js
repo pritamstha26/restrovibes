@@ -7,6 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',
+      devOptions: { enabled: false },
       includeAssets: ['/vite.svg'],
       manifest: {
         name: 'RestroVibe',
@@ -27,6 +28,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
-    cors: true
+    cors: true,
+    fs: { allow: ['..'] },
   }
 });

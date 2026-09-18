@@ -1,0 +1,298 @@
+@startuml Refined Architecture - RestroVibes
+skinparam monochrome false
+skinparam shadowing false
+skinparam componentFontSize 11
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam nodesep 40
+skinparam ranksep 40
+skinparam packageFontSize 12
+skinparam packageStyle rectangle
+skinparam arrowFontSize 9
+skinparam arrowColor #555555
+skinparam lineColor #666666
+skinparam borderColor #888888
+
+title RestroVibes — Refined System Architecture
+top to bottom direction
+
+' ============================================================
+' EXTERNAL ACTORS
+' ============================================================
+actor Client as CL
+actor Restaurateur as RE
+actor Admin as AD
+
+cloud "External Services" as EXT {
+  [OpenStreetMap] as OSM
+  [Geolocation API] as GEO
+  [SMTP / Email] as SMTP
+}
+
+' ============================================================
+' CLIENT TIER
+' ============================================================
+package "Client Tier — React SPA (Vite :5173)" as CLIENT {
+  package "Routing & Guards" {
+    [React Router\n(JWT Guard)] as ROUTER
+  }
+
+  package "Client Portal" as CP {
+    [Dashboard] as C_DASH
+    [Nearby Restaurants\n(Leaflet Map)] as C_MAP
+    [Booking Form\n(Lottery Entry)] as C_BOOK
+    [GPS Navigation] as C_GPS
+    [Settings] as C_SETTINGS
+  }
+
+  package "Restaurateur Portal" as RP {
+    [Dashboard] as R_DASH
+    [Appointments Tab] as R_APPT
+    [Services & Tables\nTab] as R_SVC
+    [Client Risk\nProfile] as R_RISK
+  }
+
+  package "Admin Panel" as ADMIN_PANEL {
+    [Admin Dashboard] as A_DASH
+    [User Management] as A_USERS
+    [Lottery Override] as A_LOTTERY
+  }
+
+  package "API Layer" as API_LAYER {
+    [Axios Instance\n(baseURL :5000)] as AXIOS
+    [Request Interceptor\n(JWT Injection)] as REQ_INT
+    [Response Interceptor\n(401 Refresh)] as RES_INT
+  }
+
+  package "Background Hooks" as HOOKS {
+    [usePolling\n(5s refresh)] as POLL
+  }
+}
+
+' ============================================================
+' SERVER TIER
+' ============================================================
+package "Server Tier — Express.js (Node :5000)" as SERVER {
+  package "Middleware Chain" as MW {
+    [CORS] as MW_CORS
+    [JSON Parser] as MW_JSON
+    [AuthMiddleware\n(JWT Verify)] as MW_AUTH
+    [Error Handler] as MW_ERR
+  }
+
+  package "Route Layer" as ROUTES {
+    [authRoutes] as RT_AUTH
+    [appointmentRoutes] as RT_APPT
+    [locationRoutes] as RT_LOC
+    [tableRoutes] as RT_TBL
+    [serviceRoutes] as RT_SVC
+    [ratingRoutes] as RT_RAT
+    [lotteryRoutes] as RT_LOT
+    [uploadRoutes] as RT_UP
+    [userRoutes] as RT_USR
+  }
+
+  package "Controller Layer" as CTRL {
+    [AuthController] as CT_AUTH
+    [AppointmentController] as CT_APPT
+    [LocationController] as CT_LOC
+    [TableController] as CT_TBL
+    [ServiceController] as CT_SVC
+    [RatingController] as CT_RAT
+    [UserController] as CT_USR
+    [LotteryController] as CT_LOT
+    [UploadController] as CT_UP
+  }
+
+  package "Business Engines" as ENGINES {
+    [ScoringEngine\n(Penalty & Trust)] as ENG_SCORE
+    [WeightedLottery\n(Selection)] as ENG_LOTTERY
+    [PriorityQueue\n(Level Sorting)] as ENG_PQ
+    [Haversine\n(Distance/ETA)] as ENG_HAV
+    [tableCapacity\n(Seat Enforcement)] as ENG_CAP
+    [JWT Utilities] as ENG_JWT
+    [Bcrypt Hasher] as ENG_BCRYPT
+    [Nodemailer\n(Email)] as ENG_MAIL
+  }
+
+  package "Background Workers" as WORKERS {
+    [Overstay Worker\n(60s)] as WW_OVER
+    [Auto-Accept Worker\n(2min, 20min grace)] as WW_AUTO
+    [Lottery Scheduler\n(60s)] as WW_LOT
+  }
+}
+
+' ============================================================
+' DATA TIER
+' ============================================================
+database "PostgreSQL 14 (:5433)" as DB {
+  [Users] as TBL_USERS
+  [Appointments] as TBL_APPT
+  [BookingHistory] as TBL_HIST
+  [LotteryPool] as TBL_LOT
+  [RestaurateurServices] as TBL_SVC
+  [Tables] as TBL_TBL
+  [Ratings] as TBL_RAT
+}
+
+storage "File System\n(uploads/)" as FS
+
+' ============================================================
+' CLIENT INTERNAL CONNECTIONS
+' ============================================================
+ROUTER --> ROUTER_PROT : protected routes
+ROUTER --> C_DASH
+ROUTER --> C_MAP
+ROUTER --> C_BOOK
+ROUTER --> C_GPS
+ROUTER --> R_DASH
+ROUTER --> R_APPT
+ROUTER --> A_DASH
+
+C_MAP ..> POLL
+C_BOOK ..> POLL
+
+C_MAP --> AXIOS
+C_BOOK --> AXIOS
+C_GPS --> AXIOS
+R_APPT --> AXIOS
+R_RISK --> AXIOS
+A_DASH --> AXIOS
+A_USERS --> AXIOS
+A_LOTTERY --> AXIOS
+
+AXIOS --> REQ_INT
+REQ_INT --> RES_INT
+
+' ============================================================
+' CLIENT -> SERVER (HTTP/REST + JWT)
+' ============================================================
+AXIOS -right-> MW_CORS : HTTP POST/GET/PUT\nAuthorization: Bearer <token>
+CL -right-> AXIOS : Axios API calls
+
+' ============================================================
+' SERVER: Routes -> Middleware -> Controllers
+' ============================================================
+MW_AUTH ..> RT_AUTH
+MW_AUTH ..> RT_APPT
+MW_AUTH ..> RT_LOC
+MW_AUTH ..> RT_TBL
+MW_AUTH ..> RT_SVC
+MW_AUTH ..> RT_RAT
+MW_AUTH ..> RT_LOT
+MW_AUTH ..> RT_UP
+MW_AUTH ..> RT_USR
+
+RT_AUTH --> CT_AUTH
+RT_APPT --> CT_APPT
+RT_LOC --> CT_LOC
+RT_TBL --> CT_TBL
+RT_SVC --> CT_SVC
+RT_RAT --> CT_RAT
+RT_LOT --> CT_LOT
+RT_UP --> CT_UP
+RT_USR --> CT_USR
+
+' ============================================================
+' CONTROLLERS -> ENGINES
+' ============================================================
+CT_AUTH --> ENG_JWT
+CT_AUTH --> ENG_BCRYPT
+CT_AUTH --> ENG_MAIL
+CT_APPT --> ENG_SCORE
+CT_APPT --> ENG_CAP
+CT_LOC --> ENG_HAV
+CT_RAT --> ENG_SCORE
+CT_LOT --> ENG_LOTTERY
+CT_LOT --> ENG_PQ
+
+' ============================================================
+' CONTROLLERS -> MODELS
+' ============================================================
+CT_AUTH --> TBL_USERS
+CT_APPT --> TBL_APPT
+CT_APPT --> TBL_HIST
+CT_LOC --> TBL_USERS
+CT_TBL --> TBL_TBL
+CT_SVC --> TBL_SVC
+CT_RAT --> TBL_RAT
+CT_USR --> TBL_USERS
+CT_LOT --> TBL_LOT
+CT_UP --> FS
+
+' ============================================================
+' WORKERS -> MODELS + ENGINES
+' ============================================================
+WW_OVER --> TBL_APPT
+WW_OVER --> TBL_HIST
+WW_OVER --> ENG_SCORE
+WW_OVER --> ENG_CAP
+
+WW_AUTO --> TBL_APPT
+WW_AUTO --> ENG_CAP
+
+WW_LOT --> TBL_LOT
+WW_LOT --> TBL_APPT
+WW_LOT --> ENG_LOTTERY
+
+' ============================================================
+' ENGINES -> DATABASE
+' ============================================================
+ENG_SCORE --> TBL_HIST
+ENG_SCORE --> TBL_USERS
+ENG_HAV --> TBL_USERS
+ENG_PQ --> TBL_APPT
+
+' ============================================================
+' MODELS -> DATABASE
+' ============================================================
+TBL_USERS --> DB
+TBL_APPT --> DB
+TBL_HIST --> DB
+TBL_LOT --> DB
+TBL_SVC --> DB
+TBL_TBL --> DB
+TBL_RAT --> DB
+
+' ============================================================
+' EXTERNAL CONNECTIONS
+' ============================================================
+CT_LOC --> GEO : Haversine distance
+CT_MAP --> OSM : Map tiles
+CT_GPS --> GEO : Navigation URLs
+ENG_MAIL --> SMTP : Email delivery
+CT_UP --> FS : Table images
+
+' ============================================================
+' KEY DATA FLOWS (dashed)
+' ============================================================
+WW_LOT ..> CT_LOT : resolveLottery()\nselect winner
+WW_AUTO ..> CT_APPT : auto-accept\npending booking
+WW_OVER ..> CT_APPT : mark no_show /\ncompleted
+ENG_SCORE ..> TBL_USERS : update penalty_score\n+ reliability_status
+
+' ============================================================
+' LEGEND / NOTES
+' ============================================================
+note bottom of CLIENT
+  **Client Tier**
+  React SPA with React Router,
+  Leaflet maps, Axios (JWT interceptors)
+  Three portals: Client, Restaurateur, Admin
+end note
+
+note bottom of SERVER
+  **Server Tier**
+  Express.js MVC: Routes → Controllers → Models
+  Background Workers run independently (non-blocking)
+  Engines handle scoring, lottery, capacity, GPS
+end note
+
+note bottom of DB
+  **PostgreSQL**
+  7 core tables + indexes
+  SERIALIZABLE transactions for race conditions
+  Runtime auto-migration on server startup
+end note
+
+@enduml

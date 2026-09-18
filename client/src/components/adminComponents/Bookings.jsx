@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { Spinner, Alert } from "react-bootstrap";
+import { useNavigate } from "react-router-dom";
 import {
   CalendarCheck,
   Landmark,
@@ -8,6 +9,8 @@ import {
   User,
   RefreshCw,
   Shuffle,
+  BarChart3,
+  Settings2,
 } from "lucide-react";
 import api from "../../apis/api";
 import "./admin-panel.css";
@@ -21,6 +24,7 @@ const TABS = [
 ];
 
 export default function AdminBookings() {
+  const navigate = useNavigate();
   const [appointments, setAppointments] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -31,6 +35,10 @@ export default function AdminBookings() {
   const [poolsLoading, setPoolsLoading] = useState(false);
   const [resolvingKey, setResolvingKey] = useState(null);
   const [lotteryResult, setLotteryResult] = useState(null);
+  const [showDemo, setShowDemo] = useState(false);
+  const [demoData, setDemoData] = useState(null);
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoConfig, setDemoConfig] = useState(null);
 
   const displayed = useMemo(() => {
     const base =
@@ -128,6 +136,24 @@ export default function AdminBookings() {
       console.error("Error fetching lottery pools:", err);
     } finally {
       setPoolsLoading(false);
+    }
+  };
+
+  const fetchDemo = async () => {
+    try {
+      setDemoLoading(true);
+      const token = sessionStorage.getItem("access_token");
+      if (!token) return;
+      const response = await api.get("/lottery/demo", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setDemoData(response.data);
+      setDemoConfig(response.data.config);
+      setShowDemo(true);
+    } catch (err) {
+      console.error("Error fetching demo dashboard:", err);
+    } finally {
+      setDemoLoading(false);
     }
   };
 
@@ -259,19 +285,86 @@ export default function AdminBookings() {
               Weighted Lottery — Pending Contests
             </h6>
           </div>
-          <button
-            onClick={fetchPools}
-            className="slick-btn-secondary"
-            style={{ padding: "0.35rem 0.7rem", fontSize: "0.75rem" }}
-            disabled={poolsLoading}
-          >
-            {poolsLoading ? (
-              <Spinner animation="border" size="sm" className="text-secondary" style={{ width: "14px", height: "14px" }} />
-            ) : (
-              <RefreshCw size={12} />
-            )}
-          </button>
+          <div className="d-flex gap-2">
+            <button
+              onClick={fetchDemo}
+              className="slick-btn-secondary"
+              style={{ padding: "0.35rem 0.7rem", fontSize: "0.75rem" }}
+              disabled={demoLoading}
+            >
+              {demoLoading ? (
+                <Spinner animation="border" size="sm" className="text-secondary" style={{ width: "14px", height: "14px" }} />
+              ) : (
+                <BarChart3 size={12} />
+              )}
+              {showDemo ? "Refresh Demo" : "📊 Demo Dashboard"}
+            </button>
+            <button
+              onClick={() => navigate("/admin/lottery-demo")}
+              className="slick-btn-primary"
+              style={{ padding: "0.35rem 0.7rem", fontSize: "0.75rem" }}
+            >
+              <BarChart3 size={12} /> Full Visualizer
+            </button>
+            <button
+              onClick={fetchPools}
+              className="slick-btn-secondary"
+              style={{ padding: "0.35rem 0.7rem", fontSize: "0.75rem" }}
+              disabled={poolsLoading}
+            >
+              {poolsLoading ? (
+                <Spinner animation="border" size="sm" className="text-secondary" style={{ width: "14px", height: "14px" }} />
+              ) : (
+                <RefreshCw size={12} />
+              )}
+            </button>
+          </div>
         </div>
+        {showDemo && demoData && (
+          <div className="p-3 mb-2 border-bottom border-light" style={{ background: "#f8fafc" }}>
+            <h6 className="m-0 fw-bold text-dark mb-2" style={{ fontSize: "0.8rem" }}>
+              <Settings2 size={12} className="inline" /> Lottery Configuration
+            </h6>
+            <div className="d-flex flex-wrap gap-3" style={{ fontSize: "0.75rem" }}>
+              <span><strong>Cutoff:</strong> {demoConfig?.lotteryCutoffMinutes} min</span>
+              <span><strong>Min Gap:</strong> {demoConfig?.minGapMinutes} min</span>
+              <span><strong>Half-life:</strong> {demoConfig?.agingHalfLifeHours}h</span>
+              <span><strong>Max Boost:</strong> ×{demoConfig?.maxMultiplier}</span>
+              <span><strong>Scheduler:</strong> {demoConfig?.schedulerIntervalMs}ms</span>
+            </div>
+          </div>
+        )}
+        {showDemo && demoData?.recentResults?.length > 0 && (
+          <div className="p-3 mb-3 border-bottom border-light" style={{ background: "#f8fafc" }}>
+            <h6 className="m-0 fw-bold text-dark mb-2" style={{ fontSize: "0.8rem" }}>
+              Recent Resolutions
+            </h6>
+            <div className="table-responsive">
+              <table className="table mb-0 slick-table" style={{ fontSize: "0.75rem" }}>
+                <thead>
+                  <tr>
+                    <th className="ps-3">Date</th>
+                    <th>Slot</th>
+                    <th>Winner</th>
+                    <th>Losers</th>
+                    <th>Earliest Entry</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {demoData.recentResults.map((r, i) => (
+                    <tr key={i}>
+                      <td className="ps-3">{r.booking_date}</td>
+                      <td className="text-mono-sub">{slotToTime(r.preferred_time_slot)}</td>
+                      <td>#{r.winners}</td>
+                      <td>#{r.losers}</td>
+                      <td>{r.earliest_entry ? new Date(r.earliest_entry).toLocaleString() : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
         {lotteryResult && (
           <Alert className="alert-minimal m-3 mb-0 p-2 small">{lotteryResult}</Alert>
         )}
@@ -288,8 +381,10 @@ export default function AdminBookings() {
                   <th>Date</th>
                   <th>Slot</th>
                   <th>Entrants</th>
-                  <th>Resolution</th>
-                  <th className="pe-4 text-end">Action</th>
+<th>Resolution</th>
+                      <th>Boost</th>
+                      <th>Countdown</th>
+                      <th className="pe-4 text-end">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -310,6 +405,10 @@ export default function AdminBookings() {
                         ) : (
                           <span className="text-success">• open</span>
                         )}
+                      </td>
+                      <td className="text-mono-sub">{pool.agingBoost}×</td>
+                      <td className="text-mono-sub" style={{ color: pool.countdown?.closed ? "#dc2626" : "#059669", fontWeight: 700 }}>
+                        {pool.countdown ? `${pool.countdown.remainingMinutes}m ${pool.countdown.remainingSeconds}s` : "—"}
                       </td>
                       <td className="pe-4 text-end">
                         <button

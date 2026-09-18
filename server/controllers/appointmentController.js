@@ -8,7 +8,7 @@ import { Op } from "sequelize";
 import { calculateAppointmentPriority } from "../utils/appointmentPriority.js";
 import RestaurateurService from "../models/RestaurateurServices.js";
 import { ScoringEngine } from "../utils/scoring.js";
-import { isLotteryClosed, getLotteryResolutionTime } from "../utils/lotteryTime.js";
+import { isLotteryClosed, getLotteryResolutionTime, getLotteryCountdown } from "../utils/lotteryTime.js";
 
 const getBufferMinutes = () => Number(process.env.BOOKING_BUFFER_MINUTES) || 15;
 
@@ -240,7 +240,7 @@ async function getRestaurantTables(restaurateurId) {
 }
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const ONE_HOUR_MS = 60 * 60 * 1000; // 1 hour gap between same-restaurant bookings
+const ONE_HOUR_MS = Number(process.env.MIN_GAP_MINUTES) || 60 * 60 * 1000; // configurable: default 1 hour gap between same-restaurant bookings
 
 function canBookAfterOneDay(existingAppointments, desiredDate) {
   if (!existingAppointments || !existingAppointments.length) return true;
@@ -1899,6 +1899,137 @@ export const checkSlotAvailability = async (req, res) => {
   } catch (error) {
     console.error("checkSlotAvailability error:", error);
     res.status(500).json({ success: false, message: "Failed to check availability" });
+  }
+};
+
+/**
+ * Unified schedule-feasibility verdict for a requested booking.
+ * @route GET /api/appointments/feasibility?restaurateur_id&date&duration&party_size&table_id?
+ * Returns one verdict + blocking reasons + warnings + the underlying details,
+ * so every client (book flow, admin, demo) shares the same rule.
+ */
+export const checkFeasibility = async (req, res) => {
+  try {
+    const { table_id, restaurateur_id, date, duration, party_size } = req.query;
+
+    if (!restaurateur_id || !date) {
+      return res.status(400).json({
+        success: false,
+        message: "restaurateur_id and date are required",
+      });
+    }
+
+    const appointmentDate = new Date(date);
+    if (Number.isNaN(appointmentDate.getTime())) {
+      return res.status(400).json({ success: false, message: "Invalid date" });
+    }
+
+    const durationMinutes = Number(duration) || 45;
+    const partySize = Number(party_size) || 1;
+    const reasons = [];
+    const warnings = [];
+
+    const restaurateur = await UsersModel.findOne({
+      where: { id: restaurateur_id },
+      attributes: ["id", "seat_capacity", "opening_time", "closing_time"],
+    });
+    if (!restaurateur) {
+      return res.status(404).json({ success: false, message: "Restaurant not found" });
+    }
+
+    // 1. Requested time must be in the future.
+    const inFuture = appointmentDate.getTime() > Date.now();
+    if (!inFuture) reasons.push("Requested time is in the past.");
+
+    // 2. Must fall inside venue opening hours.
+    const toMinutes = (t) => {
+      const m = String(t || "").match(/^(\d{1,2}):(\d{2})/);
+      return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+    };
+    const openMin = toMinutes(restaurateur.opening_time);
+    const closeMin = toMinutes(restaurateur.closing_time);
+    const startMin = appointmentDate.getHours() * 60 + appointmentDate.getMinutes();
+    const endMin = startMin + durationMinutes;
+    let withinHours = true;
+    if (openMin !== null && closeMin !== null) {
+      const closeEff = closeMin <= openMin ? closeMin + 1440 : closeMin;
+      const endEff = endMin < startMin ? endMin + 1440 : endMin;
+      withinHours = startMin >= openMin && endEff <= closeEff;
+      if (!withinHours) {
+        reasons.push(
+          `Outside opening hours (${restaurateur.opening_time}–${restaurateur.closing_time}).`,
+        );
+      }
+    }
+
+    // 3. Table or venue capacity.
+    let tableFree = null;
+    let remainingSeats = null;
+    if (table_id) {
+      tableFree = await checkTableAvailability(table_id, appointmentDate, durationMinutes);
+      if (!tableFree) reasons.push("Selected table is already booked for this window.");
+    } else {
+      const seatsTaken = await sumOverlappingPartySize(restaurateur_id, appointmentDate, durationMinutes);
+      const capacity = restaurateur?.seat_capacity || 10;
+      remainingSeats = Math.max(capacity - seatsTaken, 0);
+      if (remainingSeats < partySize) {
+        reasons.push(`Not enough seats left (need ${partySize}, ${remainingSeats} free).`);
+      }
+    }
+
+    // 4. Contention / lottery state (mirrors createAppointment rules).
+    const bookDateStr = appointmentDate.toISOString().slice(0, 10);
+    const preferredTimeSlot = getTimeSlotFromDate(appointmentDate);
+    const pendingLotteryCount = await LotteryPoolModel.count({
+      where: {
+        restaurant_id: Number(restaurateur_id),
+        booking_date: bookDateStr,
+        preferred_time_slot: preferredTimeSlot,
+        status: "pending",
+      },
+    });
+    const existingActiveCount = await countOverlappingActive(
+      Number(restaurateur_id),
+      appointmentDate,
+      durationMinutes,
+    );
+    const contested = pendingLotteryCount > 0 || existingActiveCount > 0;
+    const lotteryClosed = isLotteryClosed(bookDateStr, preferredTimeSlot);
+    const resolutionTime = getLotteryResolutionTime(bookDateStr, preferredTimeSlot);
+    const countdown = getLotteryCountdown(bookDateStr, preferredTimeSlot);
+    const lotteryOpen = contested && !lotteryClosed;
+
+    if (contested && lotteryClosed) {
+      reasons.push("Slot is contested and its lottery has closed — pick another time.");
+    } else if (lotteryOpen) {
+      warnings.push(
+        `Slot is contested by ${pendingLotteryCount + existingActiveCount} booking(s) — request will enter the weighted lottery (draw ${resolutionTime.toLocaleString()}).`,
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      feasible: reasons.length === 0,
+      reasons,
+      warnings,
+      details: {
+        withinHours,
+        inFuture,
+        tableFree,
+        remainingSeats,
+        contested,
+        pendingLotteryCount,
+        existingActiveCount,
+        lotteryOpen,
+        lotteryClosed,
+        resolutionTime: contested ? resolutionTime : null,
+        countdown,
+        timeSlot: preferredTimeSlot,
+      },
+    });
+  } catch (error) {
+    console.error("checkFeasibility error:", error);
+    res.status(500).json({ success: false, message: "Failed to check feasibility" });
   }
 };
 

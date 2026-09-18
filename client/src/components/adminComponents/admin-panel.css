@@ -355,9 +355,9 @@
 .slick-badge-info { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
 .slick-badge-secondary { background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; }
 
-/* Distinct status colors for at-a-glance separation */
-.slick-badge-pending { background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; }
-.slick-badge-accepted { background: #e0f2fe; color: #075985; border: 1px solid #38bdf8; }
+/* Distinct status colors for at-a-glance separation: accepted = green, pending = orange */
+.slick-badge-pending { background: #fff7ed; color: #c2410c; border: 1px solid #fb923c; }
+.slick-badge-accepted { background: #dcfce7; color: #166534; border: 1px solid #4ade80; }
 .slick-badge-confirmed { background: #dcfce7; color: #166534; border: 1px solid #4ade80; }
 .slick-badge-in_progress { background: #e0f2fe; color: #075985; border: 1px solid #38bdf8; }
 .slick-badge-completed { background: #dcfce7; color: #166534; border: 1px solid #4ade80; }

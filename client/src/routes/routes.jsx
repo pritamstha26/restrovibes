@@ -12,6 +12,7 @@ import ServiceList from "../components/adminComponents/Services";
 import TablesList from "../components/adminComponents/Tables";
 import ClientList from "../components/adminComponents/ClientList";
 import AdminBookings from "../components/adminComponents/Bookings";
+import LotteryDemo from "../components/adminComponents/LotteryDemo";
 import RestaurantSettingsPage from "../components/client/restaurant-settings-page";
 import ProtectedRoute from "./ProtectedRoutes";
 import ClientPortal from "../components/client";
@@ -33,9 +34,10 @@ const routes = [
   { path: "/reset-password", element: <ResetPassword /> },
   { path: "/unauthorized", element: <UnauthorizedHandler /> },
 
-  // Protected Routes wrapper
+  // Protected Routes wrapper — role-scoped so a restaurateurs/client
+  // token can never render the opposite portal or /admin by typing the URL.
   {
-    element: <ProtectedRoute />,
+    element: <ProtectedRoute allowedRoles={["client"]} />,
     children: [
       {
         path: "client",
@@ -45,30 +47,47 @@ const routes = [
           { path: "dashboard", element: <ClientDashboard /> },
           { path: "nearby-restaurants", element: <NearByRestaurants /> },
           { path: "gps-navigation", element: <GPSNavigation /> },
+          { path: "lottery", element: <LotteryDemo /> },
           { path: "settings", element: <Settings /> },
         ],
       },
+    ],
+  },
+  {
+    element: <ProtectedRoute allowedRoles={["restaurateurs"]} />,
+    children: [
       {
         path: "restaurateurs/:tab?",
         element: <RestaurantDashboard />,
       },
       { path: "restaurant-settings", element: <RestaurantSettingsPage /> },
+    ],
+  },
+  {
+    element: <ProtectedRoute />,
+    children: [
       { path: "book/:restaurantId", element: <BookTable /> },
       { path: "appointments/:id", element: <AppointmentDetailPage /> },
     ],
   },
   {
-    path: "/admin",
-    element: <AdminLayout />,
+    element: <ProtectedRoute allowedRoles={["admin"]} />,
     children: [
-      { path: "", element: <Dashboard /> },
-      { path: "dashboard", element: <Dashboard /> },
-      { path: "bookings", element: <AdminBookings /> },
-      { path: "restaurant-list", element: <RestaurantList /> },
-      { path: "services", element: <ServiceList /> },
-      { path: "tables", element: <TablesList /> },
-      { path: "settings", element: <Settings /> },
-      { path: "clients", element: <ClientList /> },
+      {
+        path: "/admin",
+        element: <AdminLayout />,
+        children: [
+          { path: "", element: <Dashboard /> },
+          { path: "dashboard", element: <Dashboard /> },
+          { path: "bookings", element: <AdminBookings /> },
+          { path: "lottery-demo", element: <LotteryDemo /> },
+          { path: "restaurant-list", element: <RestaurantList /> },
+          { path: "services", element: <ServiceList /> },
+          { path: "tables", element: <TablesList /> },
+          { path: "settings", element: <Settings /> },
+          { path: "clients", element: <ClientList /> },
+        ],
+      },
     ],
   },
 

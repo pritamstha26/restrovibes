@@ -1083,6 +1083,7 @@ import {
   FaUsers,
   FaBars,
   FaTimes,
+  FaTrophy,
 } from "react-icons/fa";
 import { UtensilsCrossed } from "lucide-react";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -1095,6 +1096,7 @@ import ClientHistoryTab from "./tabs/ClientHistoryTab";
 import ServicesTab from "./tabs/ServicesTab";
 import SettingsTab from "./tabs/SettingsTab";
 import TablesTab from "./tabs/TablesTab";
+import LotteryDemo from "../adminComponents/LotteryDemo";
 import LocationSetup from "./LocationSetup";
 import { useNavigate, useParams, NavLink } from "react-router-dom";
 import { jwtDecode } from "jwt-decode";
@@ -1493,6 +1495,7 @@ export default function RestaurantDashboard() {
               { id: "appointments", label: "Bookings Registry", icon: FaCalendarAlt, badge: appointments.filter(a => a.status === "pending").length },
               { id: "services", label: "Service Tiers", icon: UtensilsCrossed },
               { id: "tables", label: "Tables & Views", icon: FaChair },
+              { id: "lottery", label: "Lottery Draws", icon: FaTrophy },
               { id: "clients", label: "Client History", icon: FaUsers },
               { id: "settings", label: "Workspace Config", icon: FaCog },
             ].map((tab) => (
@@ -1531,6 +1534,7 @@ export default function RestaurantDashboard() {
           {activeTab === "appointments" && renderAppointments()}
           {activeTab === "services" && renderServices()}
           {activeTab === "tables" && renderTables()}
+          {activeTab === "lottery" && <LotteryDemo />}
           {activeTab === "clients" && renderClientHistory()}
           {activeTab === "settings" && renderSettings()}
         </Container>

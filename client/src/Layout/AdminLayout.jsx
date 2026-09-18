@@ -14,6 +14,7 @@ import {
   Table,
   Menu,
   X,
+  BarChart3,
 } from "lucide-react";
 import api from "../apis/api";
 import useIsMobile from "../hooks/useIsMobile";
@@ -23,6 +24,7 @@ function SidebarContent({ onNavigate, onClose }) {
   const navElements = [
     { id: 1, name: "Dashboard", path: "dashboard", icon: LayoutDashboard },
     { id: 2, name: "Bookings", path: "bookings", icon: CalendarCheck },
+    { id: 9, name: "Lottery Demo", path: "lottery-demo", icon: BarChart3 },
     { id: 3, name: "Clients", path: "clients", icon: Users },
     { id: 4, name: "Restaurants", path: "restaurant-list", icon: Store },
     { id: 5, name: "Services and Capacity", path: "services", icon: Scissors },

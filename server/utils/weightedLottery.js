@@ -23,12 +23,12 @@ export function getEffectiveWeight(
   return weight * (1 + Math.min(agingFactor * maxAgingBoost, maxAgingBoost));
 }
 
-export function selectWeightedEntry(entries, random = Math.random(), options) {
+export function selectWeightedEntry(entries, random = Math.random(), options, now = Date.now()) {
   if (!entries.length) return null;
 
   const weightedEntries = entries.map((entry) => ({
     entry,
-    effectiveWeight: getEffectiveWeight(entry.weight, entry.entered_at, Date.now(), options),
+    effectiveWeight: getEffectiveWeight(entry.weight, entry.entered_at, now, options),
   }));
   const totalWeight = weightedEntries.reduce(
     (total, item) => total + item.effectiveWeight,

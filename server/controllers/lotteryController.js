@@ -1,12 +1,13 @@
 import { Op } from "sequelize";
+import sequelize from "../config/db.js";
 import { LotteryPoolModel, BookingHistoryModel, UsersModel } from "../models/model.js";
 import AppointmentModel from "../models/appointmentModel.js";
-import sequelize from "../config/db.js";
 import { ScoringEngine } from "../utils/scoring.js";
 import { getWeightedEntries, selectWeightedEntry, getEffectiveWeight } from "../utils/weightedLottery.js";
-import { getLotteryResolutionTime, isLotteryClosed, slotStartTime } from "../utils/lotteryTime.js";
+import { getLotteryResolutionTime, isLotteryClosed, slotStartTime, LOTTERY_CUTOFF_MINUTES, MIN_GAP_MINUTES, getLotteryCountdown } from "../utils/lotteryTime.js";
 
 const BOOKING_BUFFER_MINUTES = Number(process.env.BOOKING_BUFFER_MINUTES) || 15;
+const MIN_GAP_MS = (Number(process.env.MIN_GAP_MINUTES) || 60) * 60 * 1000;
 
 // Find an accepted/in-progress booking whose effective window (service duration +
 // buffer) overlaps [windowStart, windowStart + duration + buffer). This is what
@@ -64,11 +65,14 @@ export const enterLottery = async (req, res) => {
       return res.status(400).json({ message: "Time slot must be between 0 and 95" });
     }
 
+    const countdown = getLotteryCountdown(bookingDate, preferredTimeSlot);
+
     const resolutionTime = getLotteryResolutionTime(bookingDate, preferredTimeSlot);
     if (isLotteryClosed(bookingDate, preferredTimeSlot)) {
       return res.status(409).json({
         message: "This slot's lottery has closed. Choose another time or review alternatives.",
         resolutionTime,
+        countdown,
       });
     }
 
@@ -124,6 +128,7 @@ export const enterLottery = async (req, res) => {
         totalCompetitors: competitorCount,
         estimatedChance: calculateEstimatedChance(weight, competitorCount),
         resolutionTime,
+        countdown,
       },
     });
   } catch (error) {
@@ -241,9 +246,16 @@ export const resolveLottery = async (
   restaurantId,
   bookingDate,
   timeSlot,
-  { force = false } = {},
+  { force = false, now = new Date() } = {},
 ) => {
   try {
+    // Dynamic "as-of" time: lets callers (admin resolve, demo scripts) draw the
+    // lottery as if it were any moment instead of waiting for the real clock.
+    // Defaults to real now, so the scheduler path is unchanged.
+    const nowMs = new Date(now).getTime();
+    if (Number.isNaN(nowMs)) {
+      throw new Error("Invalid `now` datetime passed to resolveLottery");
+    }
     const seedEntries = await LotteryPoolModel.findAll({
       where: {
         restaurant_id: restaurantId,
@@ -328,7 +340,7 @@ export const resolveLottery = async (
           ).getTime(),
         ),
       );
-      if (Date.now() < latestDeadline) {
+      if (nowMs < latestDeadline) {
         return null;
       }
     }
@@ -387,7 +399,7 @@ export const resolveLottery = async (
     }
 
     const contestants = eligible.map((item) => item.entry);
-    const weightedEntries = getWeightedEntries(contestants);
+    const weightedEntries = getWeightedEntries(contestants, nowMs);
 
     let winner;
     let winnerWeight;
@@ -396,10 +408,10 @@ export const resolveLottery = async (
       winnerWeight = getEffectiveWeight(
         winner.weight,
         winner.entered_at,
-        new Date(),
+        nowMs,
       );
     } else {
-      const selected = selectWeightedEntry(contestants);
+      const selected = selectWeightedEntry(contestants, Math.random(), undefined, nowMs);
       winner = selected.entry;
       winnerWeight = selected.effectiveWeight;
     }
@@ -427,6 +439,49 @@ export const resolveLottery = async (
 
     await cancelAppointments(group.filter((entry) => entry.id !== winner.id));
 
+    // Harden: losers must not keep ANY booking overlapping the winner's awarded
+    // window. cancelAppointments above only covers pending appointments tracked
+    // in apptByUser, so a loser's pre-existing accepted booking would otherwise
+    // survive and double-book the slot alongside the winner.
+    const winnerWindow = windowFor(winner);
+    const loserUserIds = [
+      ...new Set(group.filter((e) => e.id !== winner.id).map((e) => e.user_id)),
+    ];
+    let releasedOverlapping = 0;
+    if (loserUserIds.length) {
+      const dayStart = new Date(bookingDate + "T00:00:00");
+      const dayEnd = new Date(bookingDate + "T23:59:59.999");
+      const loserAppts = await AppointmentModel.findAll({
+        where: {
+          restaurateurId: restaurantId,
+          clientId: { [Op.in]: loserUserIds },
+          date: { [Op.between]: [dayStart, dayEnd] },
+          status: { [Op.in]: ["pending", "accepted", "in_progress"] },
+        },
+      });
+      for (const a of loserAppts) {
+        const aStart = new Date(a.date);
+        const aEnd = a.end_time
+          ? new Date(a.end_time)
+          : new Date(
+              aStart.getTime() +
+                ((Number(a.original_duration) || 45) + BOOKING_BUFFER_MINUTES) *
+                  60 *
+                  1000,
+            );
+        if (
+          a.id !== winnerAppointment?.id &&
+          overlaps({ start: aStart, end: aEnd }, winnerWindow)
+        ) {
+          await AppointmentModel.update(
+            { status: "cancelled" },
+            { where: { id: a.id } },
+          );
+          releasedOverlapping += 1;
+        }
+      }
+    }
+
     const totalEntries = group.length;
     const competitorCount = totalEntries - 1;
     const totalWeight = weightedEntries.reduce(
@@ -438,9 +493,20 @@ export const resolveLottery = async (
         ? "100.0%"
         : calculateWeightedChance(winnerWeight, totalWeight);
 
+    const groupUserIds = [...new Set(group.map((e) => e.user_id))];
+    const groupUsers = await UsersModel.findAll({
+      where: { id: { [Op.in]: groupUserIds } },
+      attributes: ["id", "first_name", "last_name"],
+    });
+    const groupNameOf = (id) => {
+      const u = groupUsers.find((r) => r.id === id);
+      return u ? `${u.first_name} ${u.last_name}`.trim() : `User #${id}`;
+    };
+
     return {
       winner: {
         userId: winner.user_id,
+        userName: groupNameOf(winner.user_id),
         weight: winnerWeight,
         entryId: winner.id,
         appointmentId: winnerAppointment ? winnerAppointment.id : null,
@@ -449,14 +515,16 @@ export const resolveLottery = async (
       winnerChance,
       competitorCount,
       groupedSlots,
+      releasedOverlapping,
       losers: group
         .filter((entry) => entry.id !== winner.id)
         .map((entry) => ({
           userId: entry.user_id,
+          userName: groupNameOf(entry.user_id),
           weight:
             weightedEntries.find((item) => item.entry.id === entry.id)
               ?.effectiveWeight ??
-            getEffectiveWeight(entry.weight, entry.entered_at, new Date()),
+            getEffectiveWeight(entry.weight, entry.entered_at, nowMs),
           entryId: entry.id,
         })),
     };
@@ -468,7 +536,7 @@ export const resolveLottery = async (
 
 export const manualResolve = async (req, res) => {
   try {
-    const { restaurantId, bookingDate, timeSlot } = req.body;
+    const { restaurantId, bookingDate, timeSlot, resolveAt } = req.body;
 
     if (
       typeof restaurantId !== "number" ||
@@ -478,15 +546,32 @@ export const manualResolve = async (req, res) => {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
+    // Restaurants may only resolve their own venue's draws.
+    if (req.user?.role === "restaurateurs" && Number(restaurantId) !== Number(req.user.id)) {
+      return res.status(403).json({ message: "You can only resolve your own venue's lotteries" });
+    }
+
+    // Optional dynamic draw time: resolve "as of" any ISO datetime instead of
+    // waiting for the real clock (e.g. simulate the draw 5h from now to grow
+    // aging boosts). Defaults to right now.
+    let now = new Date();
+    if (resolveAt !== undefined) {
+      now = new Date(resolveAt);
+      if (Number.isNaN(now.getTime())) {
+        return res.status(400).json({ message: "Invalid resolveAt datetime" });
+      }
+    }
+
     const result = await resolveLottery(restaurantId, bookingDate, timeSlot, {
       force: true,
+      now,
     });
 
     if (!result) {
       return res.status(200).json({ message: "No pending entries found" });
     }
 
-    return res.status(200).json(result);
+    return res.status(200).json({ ...result, resolvedAt: now.toISOString() });
   } catch (error) {
     console.error("Error in manualResolve:", error);
     return res.status(500).json({ message: "Internal server error" });
@@ -496,8 +581,11 @@ export const manualResolve = async (req, res) => {
 // Admin/demo helper: list every slot that currently has pending lottery entries.
 export const getPendingPools = async (req, res) => {
   try {
-    const pools = await sequelize.query(
-      `
+    // Role scoping: admins see every pool, restaurants see their own venue,
+    // clients see only contests they entered.
+    const role = req.user?.role;
+    const me = Number(req.user?.id);
+    let poolQuery = `
       SELECT
         restaurant_id,
         to_char(booking_date, 'YYYY-MM-DD') AS booking_date,
@@ -507,22 +595,322 @@ export const getPendingPools = async (req, res) => {
       WHERE status = 'pending'
       GROUP BY restaurant_id, booking_date, preferred_time_slot
       ORDER BY booking_date ASC, preferred_time_slot ASC
-      `,
-      { type: sequelize.QueryTypes.SELECT },
-    );
+      `;
+    let replacements = {};
+    if (role === "restaurateurs") {
+      poolQuery = `
+      SELECT
+        restaurant_id,
+        to_char(booking_date, 'YYYY-MM-DD') AS booking_date,
+        preferred_time_slot,
+        COUNT(*)::int AS competitors
+      FROM lottery_pool
+      WHERE status = 'pending' AND restaurant_id = :mine
+      GROUP BY restaurant_id, booking_date, preferred_time_slot
+      ORDER BY booking_date ASC, preferred_time_slot ASC
+      `;
+      replacements = { mine: me };
+    } else if (role === "client") {
+      poolQuery = `
+      SELECT
+        restaurant_id,
+        to_char(booking_date, 'YYYY-MM-DD') AS booking_date,
+        preferred_time_slot,
+        COUNT(*)::int AS competitors
+      FROM lottery_pool
+      WHERE status = 'pending'
+        AND (restaurant_id, booking_date, preferred_time_slot) IN (
+          SELECT restaurant_id, booking_date, preferred_time_slot
+          FROM lottery_pool
+          WHERE user_id = :mine AND status = 'pending'
+        )
+      GROUP BY restaurant_id, booking_date, preferred_time_slot
+      ORDER BY booking_date ASC, preferred_time_slot ASC
+      `;
+      replacements = { mine: me };
+    }
+    const pools = await sequelize.query(poolQuery, {
+      type: sequelize.QueryTypes.SELECT,
+      replacements,
+    });
 
-    const enriched = pools.map((pool) => ({
-      restaurantId: pool.restaurant_id,
-      bookingDate: pool.booking_date,
-      timeSlot: pool.preferred_time_slot,
-      competitors: pool.competitors,
-      resolutionTime: getLotteryResolutionTime(pool.booking_date, pool.preferred_time_slot),
-      closed: isLotteryClosed(pool.booking_date, pool.preferred_time_slot),
+    const enriched = pools.map((pool) => {
+      const resolutionTime = getLotteryResolutionTime(pool.booking_date, pool.preferred_time_slot);
+      const countdown = getLotteryCountdown(pool.booking_date, pool.preferred_time_slot);
+      return {
+        restaurantId: pool.restaurant_id,
+        bookingDate: pool.booking_date,
+        timeSlot: pool.preferred_time_slot,
+        competitors: pool.competitors,
+        resolutionTime: resolutionTime.toISOString(),
+        closed: isLotteryClosed(pool.booking_date, pool.preferred_time_slot),
+        countdown,
+      };
+    });
+
+    const appointmentWhere = {
+      status: { [Op.in]: ["pending", "accepted"] },
+      date: {
+        [Op.gte]: new Date(new Date().setHours(0, 0, 0, 0)),
+        [Op.lte]: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      },
+    };
+    if (role === "restaurateurs") appointmentWhere.restaurateurId = me;
+    if (role === "client") appointmentWhere.clientId = me;
+    const pendingAppointmentRows = await AppointmentModel.findAll({
+      where: appointmentWhere,
+      attributes: ["id", "restaurateurId", "clientId", "date", "status"],
+      order: [["date", "ASC"]],
+      limit: 100,
+    });
+
+    const getTimeSlot = (date) => {
+      const d = new Date(date);
+      return d.getHours() * 4 + Math.floor(d.getMinutes() / 15);
+    };
+
+    const pendingAppointments = pendingAppointmentRows.map((a) => {
+      const d = new Date(a.date);
+      return {
+        id: a.id,
+        restaurantId: a.restaurateurId,
+        clientId: a.clientId,
+        date: d.toISOString(),
+        bookingDate: d.toISOString().slice(0, 10),
+        timeSlot: getTimeSlot(d),
+        status: a.status,
+      };
+    });
+
+    // Per-pool eligibility preview (same rule as resolveLottery): an entry can
+    // only win if its window is NOT blocked by an accepted/in_progress booking
+    // from someone outside the lottery. Exposed so the UI can warn before a
+    // resolve that would end with no winner.
+    for (const pool of enriched) {
+      const entries = await LotteryPoolModel.findAll({
+        where: {
+          restaurant_id: pool.restaurantId,
+          booking_date: pool.bookingDate,
+          preferred_time_slot: pool.timeSlot,
+          status: "pending",
+        },
+        attributes: ["id", "user_id", "preferred_time_slot", "entered_at", "weight"],
+      });
+      const entrantIds = [...new Set(entries.map((e) => e.user_id))];
+      const dayStart = new Date(pool.bookingDate + "T00:00:00");
+      const dayEnd = new Date(pool.bookingDate + "T23:59:59.999");
+      const appts = entrantIds.length
+        ? await AppointmentModel.findAll({
+            where: {
+              restaurateurId: pool.restaurantId,
+              clientId: { [Op.in]: entrantIds },
+              date: { [Op.between]: [dayStart, dayEnd] },
+              status: "pending",
+            },
+          })
+        : [];
+      const apptByUser = new Map(appts.map((a) => [a.clientId, a]));
+      let eligibleCount = 0;
+      let blockedBy = null;
+      for (const entry of entries) {
+        const appt = apptByUser.get(entry.user_id);
+        const start = appt
+          ? new Date(appt.date)
+          : slotStartTime(pool.bookingDate, entry.preferred_time_slot);
+        const duration = appt ? Number(appt.original_duration) || 45 : 45;
+        const occupant = await findOccupant(
+          pool.restaurantId,
+          start,
+          duration,
+          entrantIds,
+        );
+        if (!occupant) {
+          eligibleCount += 1;
+        } else if (!blockedBy) {
+          blockedBy = {
+            appointmentId: occupant.id,
+            clientId: occupant.clientId,
+            date: occupant.date,
+            status: occupant.status,
+          };
+        }
+      }
+      pool.eligibleCount = eligibleCount;
+      pool.blockedBy = blockedBy;
+      pool.entrants = entries.map((e) => ({
+        entryId: e.id,
+        userId: e.user_id,
+        weight: e.weight,
+        enteredAt: e.entered_at,
+      }));
+    }
+
+    // Batch-resolve display names (restaurants + entrants + appointment clients)
+    // so the demo UI shows names instead of bare ids.
+    const nameIds = [
+      ...enriched.map((p) => p.restaurantId),
+      ...enriched.flatMap((p) => (p.entrants || []).map((e) => e.userId)),
+      ...pendingAppointmentRows.map((a) => a.clientId),
+      ...enriched.map((p) => p.blockedBy?.clientId).filter(Boolean),
+    ];
+    const nameRows = nameIds.length
+      ? await UsersModel.findAll({
+          where: { id: { [Op.in]: [...new Set(nameIds)] } },
+          attributes: ["id", "first_name", "last_name"],
+        })
+      : [];
+    const nameOf = (id) => {
+      const u = nameRows.find((r) => r.id === id);
+      return u ? `${u.first_name} ${u.last_name}`.trim() : `User #${id}`;
+    };
+    for (const pool of enriched) {
+      pool.restaurantName = nameOf(pool.restaurantId);
+      pool.entrants = (pool.entrants || []).map((e) => ({
+        ...e,
+        userName: nameOf(e.userId),
+      }));
+      if (pool.blockedBy) {
+        pool.blockedBy.clientName = nameOf(pool.blockedBy.clientId);
+      }
+    }
+    const namedAppointments = pendingAppointments.map((a) => ({
+      ...a,
+      clientName: nameOf(a.clientId),
+      restaurantName: nameOf(a.restaurantId),
     }));
 
-    return res.status(200).json({ pools: enriched });
+    // Full appointment list for the demo page (any status, newest first),
+    // same role scoping as above.
+    const allWhere = {};
+    if (role === "restaurateurs") allWhere.restaurateurId = me;
+    if (role === "client") allWhere.clientId = me;
+    const allAppointmentRows = await AppointmentModel.findAll({
+      where: allWhere,
+      attributes: ["id", "restaurateurId", "clientId", "date", "status"],
+      order: [["date", "DESC"]],
+      limit: 100,
+    });
+    const allIds = [
+      ...allAppointmentRows.map((a) => a.clientId),
+      ...allAppointmentRows.map((a) => a.restaurateurId),
+    ];
+    const allNameRows = allIds.length
+      ? await UsersModel.findAll({
+          where: { id: { [Op.in]: [...new Set(allIds)] } },
+          attributes: ["id", "first_name", "last_name"],
+        })
+      : [];
+    const allNameOf = (id) => {
+      const u = allNameRows.find((r) => r.id === id);
+      return u ? `${u.first_name} ${u.last_name}`.trim() : `User #${id}`;
+    };
+    const allAppointments = allAppointmentRows.map((a) => {
+      const d = new Date(a.date);
+      return {
+        id: a.id,
+        restaurantId: a.restaurateurId,
+        restaurantName: allNameOf(a.restaurateurId),
+        clientId: a.clientId,
+        clientName: allNameOf(a.clientId),
+        date: d.toISOString(),
+        bookingDate: d.toISOString().slice(0, 10),
+        timeSlot: getTimeSlot(d),
+        status: a.status,
+      };
+    });
+
+    return res.status(200).json({ pools: enriched, pendingAppointments: namedAppointments, allAppointments });
   } catch (error) {
     console.error("Error in getPendingPools:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const getLotteryDemo = async (req, res) => {
+  try {
+    const now = new Date();
+    const today = new Date(now); today.setHours(0, 0, 0, 0);
+    const horizon = new Date(today); horizon.setDate(horizon.getDate() + 14);
+
+    const pendingSlots = await sequelize.query(
+      `
+      SELECT restaurant_id, booking_date, preferred_time_slot, COUNT(*) as count
+      FROM lottery_pool
+      WHERE status = 'pending'
+        AND booking_date >= :today
+        AND booking_date <= :horizon
+      GROUP BY restaurant_id, booking_date, preferred_time_slot
+      HAVING COUNT(*) >= 1
+      ORDER BY booking_date ASC, preferred_time_slot ASC
+      `,
+      {
+        replacements: {
+          today: today.toISOString().slice(0, 10),
+          horizon: horizon.toISOString().slice(0, 10),
+        },
+        type: sequelize.QueryTypes.SELECT,
+      },
+    );
+
+    const enriched = pendingSlots.map((slot) => {
+      const resolutionTime = getLotteryResolutionTime(slot.booking_date, slot.preferred_time_slot);
+      const countdown = getLotteryCountdown(slot.booking_date, slot.preferred_time_slot);
+      const ageMs = now.getTime() - new Date(resolutionTime).getTime();
+      const ageHours = Math.max(0, ageMs / 3600000);
+      const agingFactor = 1 - Math.pow(0.5, ageHours / 6);
+      const agingBoost = 1 + Math.min(agingFactor * 3, 3);
+      return {
+        restaurantId: slot.restaurant_id,
+        bookingDate: slot.booking_date,
+        timeSlot: slot.preferred_time_slot,
+        competitors: slot.count,
+        resolutionTime: resolutionTime.toISOString(),
+        closed: isLotteryClosed(slot.booking_date, slot.preferred_time_slot),
+        countdown,
+        agingBoost: Math.round(agingBoost * 100) / 100,
+        timeUntilDraw: Math.max(0, Math.round((resolutionTime.getTime() - now.getTime()) / 60000)) + " min",
+};
+    });
+
+    const recentHistory = await sequelize.query(
+      `
+      SELECT lb.restaurant_id, lb.booking_date, lb.preferred_time_slot,
+             COUNT(DISTINCT CASE WHEN lb.status = 'won' THEN lb.user_id END) as winners,
+             COUNT(DISTINCT CASE WHEN lb.status = 'lost' THEN lb.user_id END) as losers,
+             MIN(lb.entered_at) as earliest_entry,
+             MAX(lb.entered_at) as latest_entry
+      FROM lottery_pool lb
+      WHERE lb.status IN ('won', 'lost')
+        AND lb.booking_date >= :today
+        AND lb.booking_date <= :horizon
+      GROUP BY lb.restaurant_id, lb.booking_date, lb.preferred_time_slot
+      ORDER BY lb.booking_date DESC, lb.preferred_time_slot DESC
+      LIMIT 20
+      `,
+      {
+        replacements: { today: today.toISOString().slice(0, 10), horizon: horizon.toISOString().slice(0, 10) },
+        type: sequelize.QueryTypes.SELECT,
+      },
+    );
+
+    const configSummary = {
+      lotteryCutoffMinutes: LOTTERY_CUTOFF_MINUTES,
+      minGapMinutes: MIN_GAP_MINUTES,
+      agingHalfLifeHours: 6,
+      maxAgingBoost: 3,
+      maxMultiplier: 4,
+      schedulerIntervalMs: Number(process.env.SCHEDULER_INTERVAL_MS) || 60000,
+      currentTime: now.toISOString(),
+    };
+
+    return res.status(200).json({
+      message: "Lottery Demo Dashboard",
+      config: configSummary,
+      pendingSlots: enriched,
+      recentResults: recentHistory,
+    });
+  } catch (error) {
+    console.error("Error in getLotteryDemo:", error);
     return res.status(500).json({ message: "Internal server error" });
   }
 };

@@ -12,6 +12,7 @@ import {
   completeAppointment,
   extendAppointment,
   checkSlotAvailability,
+  checkFeasibility,
   markNoShow,
   markArrival,
   getClientRiskProfile,
@@ -25,6 +26,7 @@ router.post("/", createAppointment);
 
 // Availability check
 router.get("/check-availability", checkSlotAvailability);
+router.get("/feasibility", checkFeasibility);
 
 // Administrative and data fetching endpoints
 router.get("/all", getAllAppointment);
